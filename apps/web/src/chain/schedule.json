@@ -1,0 +1,6 @@
+{
+  "note": "When the chair of the real bank speaks. While `active` is false no press conference is promised and the page says so. Turn it on only together with scripts/testnet/onair.mjs, which runs the keeper at these times.",
+  "active": true,
+  "everyMinutes": 60,
+  "bankDays": 1
+}

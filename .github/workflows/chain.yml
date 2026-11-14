@@ -1,0 +1,43 @@
+# Every hour, and on every push: read the bank on NEAR testnet and check it against this repository.
+# Read-only: public RPC, no keys, no secrets, no transactions.
+#   monitor          every LEMON accounted for, the ceiling, the keeper and the chair on schedule
+#   verify:chain     the state, the keys and every cited transaction, fetched from the network
+#   verify:deployed  the contract rebuilt from this repository equals the code on chain, byte for byte
+#                    (on a macOS runner: the deployed code was built on Apple silicon, and cargo mixes the host
+#                    into the hashes that order a crate's functions)
+name: testnet
+on:
+  schedule:
+    - cron: "20 * * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run monitor
+      - run: npm run verify:chain
+  deployed:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: repro-${{ runner.os }}-${{ hashFiles('contracts/Cargo.lock', 'contracts/rust-toolchain.toml') }}
+      - run: npm run verify:deployed

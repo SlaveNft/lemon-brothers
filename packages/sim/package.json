@@ -1,0 +1,22 @@
+{
+  "name": "@chair/sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "sweep": "tsx scripts/sweep.ts",
+    "supply": "tsx scripts/supply.ts",
+    "attack": "tsx scripts/attack.ts",
+    "sweep:crisis": "tsx scripts/crisis-sweep.ts",
+    "vectors": "tsx scripts/vectors.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  }
+}

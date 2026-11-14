@@ -1,0 +1,44 @@
+/* The drawn town (Town2D.tsx). The picture has its own colours; the caption under it is the page's. */
+.pressroom.flat { background: var(--surface); border: 1px solid var(--border); box-shadow: none; }
+.town2d { display: block; width: 100%; height: auto; }
+.town2d .t-label { font: 700 15px var(--font-body); letter-spacing: 0.08em; fill: #3b2b25; }
+.town2d .t-exit { font: 800 14px var(--font-body); letter-spacing: 0.1em; fill: #fff; }
+.town2d .t-closed { font: 800 24px var(--font-body); letter-spacing: 0.08em; fill: #ff6b6b; }
+.town2d .cash { fill: #f2b83a; transition: y 0.6s ease, height 0.6s ease; }
+.town2d .vault.low .cash { fill: #d9363b; }
+.town2d .vault.low > circle { stroke: #d9363b; }
+.town2d .wheel { transform-origin: 150px 176px; transition: transform 0.9s ease; }
+.town2d .vault.low .wheel { transform: rotate(60deg); }
+
+/* a depositor moves to its place, or out of the door, in one second; then it only breathes */
+.town2d .seat { transition: transform 1.1s cubic-bezier(0.5, 0, 0.2, 1), opacity 0.9s ease 0.2s; cursor: default; }
+.town2d .bob { animation: t-bob 3.2s ease-in-out infinite; }
+.town2d .bob:has(.f-worried) { animation: t-bob 1.3s ease-in-out infinite; }
+.town2d .bob:has(.f-panic) { animation: t-shake 0.42s linear infinite; }
+@keyframes t-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes t-shake { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-3px, -2px); } 75% { transform: translate(3px, -1px); } }
+
+.t-bubble { box-sizing: border-box; background: #fffdf8; border: 2.5px solid #3b2b25; border-radius: 16px; padding: 10px 13px; display: flex; flex-direction: column; gap: 4px;
+  font-family: var(--font-body); color: #201914; box-shadow: 0 4px 0 rgba(59, 43, 37, 0.18); }
+.t-bubble .t-who { font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #7a6d63; }
+.t-bubble .t-say { font-family: var(--font-display); font-size: 15.5px; line-height: 1.28; }
+.t-bubble.tone-alarming { border-color: #9f2f2d; } .t-bubble.tone-cautious { border-color: #956400; }
+.t-bubble.small { padding: 6px 9px; border-width: 2px; border-radius: 12px; border-color: #1f6c9f; }
+.t-bubble.small .t-who { font-size: 9px; color: #1f6c9f; } .t-bubble.small .t-say { font-size: 12px; line-height: 1.25; }
+
+.town2d .t-stamp rect { fill: rgba(255, 253, 248, 0.86); stroke: #d9363b; stroke-width: 5; }
+.town2d .t-stamp text { font: 800 24px var(--font-body); letter-spacing: 0.06em; fill: #d9363b; }
+.town2d .t-stamp text.sub { font-size: 14px; letter-spacing: 0.12em; }
+.town2d .t-stamp { animation: t-stamp 0.35s cubic-bezier(0.2, 1.6, 0.4, 1); }
+.town2d .t-stamp.closed text { font-size: 30px; }
+@keyframes t-stamp { from { opacity: 0; scale: 1.8; } to { opacity: 1; scale: 1; } }
+.town2d .t-float { font: 800 19px var(--font-body); paint-order: stroke; stroke: #fffdf8; stroke-width: 6px; stroke-linejoin: round; animation: t-float 2.6s ease-out forwards; }
+.town2d .t-float.burn { fill: #b0282c; } .town2d .t-float.mint { fill: #2f6b3a; }
+@keyframes t-float { 0% { opacity: 0; transform: translateY(14px); } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0.85; transform: translateY(0); } }
+
+.scene-cap { margin: 0; padding: 10px 16px 12px; font-size: 14px; line-height: 1.5; color: var(--fg-2); border-top: 1px solid var(--border-soft); }
+.scene-cap b { color: var(--fg); }
+@media (max-width: 640px) { .scene-cap { font-size: 12.5px; padding: 8px 12px 10px; } }
+@media (prefers-reduced-motion: reduce) { .town2d .bob, .town2d .t-stamp, .town2d .t-float { animation: none; } .town2d .seat { transition: none; } }
+/* on a wide page (the town mode) the picture does not grow past what fits on a screen */
+.pressroom.flat .town2d { max-height: min(76vh, 640px); background: #f6e9d3; }

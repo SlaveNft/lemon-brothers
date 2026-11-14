@@ -1,0 +1,17 @@
+[package]
+name = "bank-core"
+version = "0.1.0"
+edition = "2021"
+description = "Pure-Rust rules of the Lemon Brothers bank and $LEMON token. Same integer math as packages/sim."
+license = "MIT"
+
+[features]
+default = []
+# Storage serialization for the near-sdk wrapper. The core itself has no dependencies.
+borsh = ["dep:borsh"]
+
+[dependencies]
+borsh = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1"

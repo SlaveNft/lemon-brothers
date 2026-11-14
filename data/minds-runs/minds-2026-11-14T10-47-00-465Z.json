@@ -1,0 +1,366 @@
+{
+  "seed": 7,
+  "persona": "hawk",
+  "days": 8,
+  "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+  "depositors": [
+    {
+      "id": "agent-11",
+      "name": "Lena Okafor",
+      "character": "hard to scare; you do not trust what officials say; rumours and what your neighbours do sway you easily"
+    },
+    {
+      "id": "agent-38",
+      "name": "Ivan Moreau",
+      "character": "nervous by nature; you take the chair's words with some doubt; you keep an eye on what your neighbours do"
+    },
+    {
+      "id": "agent-05",
+      "name": "Iris Reyes",
+      "character": "neither brave nor timid; you tend to believe the bank's chair; you make up your own mind whatever the neighbours do"
+    }
+  ],
+  "paidCompletions": 21,
+  "log": [
+    {
+      "day": 0,
+      "round": 0,
+      "epoch": 0,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.40% stands. Discipline is a policy."
+      },
+      "vault": 131833,
+      "owed": 131833,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-11",
+          "name": "Lena Okafor",
+          "choice": "hold",
+          "why": "The vault is fully funded and no friends have fled, so panic seems premature.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 1461
+        },
+        {
+          "id": "agent-38",
+          "name": "Ivan Moreau",
+          "choice": "hold",
+          "why": "The vault is fully funded and no one has run yet, so there is no immediate reason to panic.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 555
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "deposit",
+          "why": "The chair's calm assurance and the full vault suggest safety, so I will use my wallet cash to earn the 0.55% daily rate.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 2404
+        }
+      ]
+    },
+    {
+      "day": 1,
+      "round": 0,
+      "epoch": 1,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 44475,
+      "owed": 127072,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-11",
+          "name": "Lena Okafor",
+          "choice": "hold",
+          "why": "The vault has nearly 35% cash which is plenty for a few withdrawals, and my friends are staying put.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 1469
+        },
+        {
+          "id": "agent-38",
+          "name": "Ivan Moreau",
+          "choice": "hold",
+          "why": "The vault is healthy and no friends have run, so I will wait to see if the panic starts.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 558
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The bank is stable and the chair's calm assurance aligns with my tendency to trust authority, so I see no reason to panic or add funds.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 2955
+        }
+      ]
+    },
+    {
+      "day": 2,
+      "round": 0,
+      "epoch": 2,
+      "chair": {
+        "tone": "cautious",
+        "statement": "We are seeing outflows. The reserve is being strengthened. Please withdraw only what you need. Discipline is a policy."
+      },
+      "vault": 44213,
+      "owed": 126323,
+      "ran": 17,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-11",
+          "name": "Lena Okafor",
+          "choice": "run",
+          "why": "The bank admitted to writing off loans and the vault is dangerously low, so I am leaving now before the collapse.",
+          "say": "My neighbor pulled out yesterday, and I'm not waiting to see if the vault is really full.",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 1477
+        },
+        {
+          "id": "agent-38",
+          "name": "Ivan Moreau",
+          "choice": "hold",
+          "why": "The bank's loan write-off reduces total liabilities, effectively strengthening the reserve ratio, and since no friends have run, panic is not yet contagious.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 561
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The bank's reserve is still healthy at nearly 35% and the chair's caution suggests stability, so I will keep my money in to earn the interest while monitoring the situation.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 2971
+        }
+      ]
+    },
+    {
+      "day": 3,
+      "round": 0,
+      "epoch": 3,
+      "chair": {
+        "tone": "cautious",
+        "statement": "We are seeing outflows. The reserve is being strengthened. Please withdraw only what you need. Discipline is a policy."
+      },
+      "vault": 20314,
+      "owed": 99809,
+      "ran": 24,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-11",
+          "name": "Lena Okafor",
+          "choice": "hold",
+          "why": "The vault is dangerously low at 20% and officials are just whispering about 'discipline' while neighbors are likely already grabbing cash. (wanted to run, but has nothing left in the bank)",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-38",
+          "name": "Ivan Moreau",
+          "choice": "run",
+          "why": "With my friends withdrawing and the vault barely covering yesterday's outflows, I cannot risk losing everything.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 566
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The bank's liquidity is still above 20% and the chair's message encourages discipline, so I will trust the institution over the crowd.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 2998
+        }
+      ]
+    },
+    {
+      "day": 4,
+      "round": 0,
+      "epoch": 4,
+      "chair": {
+        "tone": "cautious",
+        "statement": "We are seeing outflows. The reserve is being strengthened. Please withdraw only what you need. Discipline is a policy."
+      },
+      "vault": 365,
+      "owed": 44374,
+      "ran": 2,
+      "fell": true,
+      "moves": [
+        {
+          "id": "agent-11",
+          "name": "Lena Okafor",
+          "choice": "run",
+          "why": "The reserve is only 0.8% which is dangerously low, and my neighbors Ravi and Hugo already fled, so I cannot trust the bank's claim of strength.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-38",
+          "name": "Ivan Moreau",
+          "choice": "run",
+          "why": "With 99.2% of deposits already withdrawn, the bank is effectively insolvent and I must secure my remaining funds before the vault empties completely.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "run",
+          "why": "With 55.9% of depositors having fled yesterday and the vault holding only 0.8% of total deposits, the bank is mathematically insolvent for remaining depositors, so I must secure my funds before they …",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 3025
+        }
+      ]
+    },
+    {
+      "day": 5,
+      "bailout": true
+    },
+    {
+      "day": 6,
+      "round": 1,
+      "epoch": 0,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.40% stands. Discipline is a policy."
+      },
+      "vault": 45953,
+      "owed": 37433,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-11",
+          "name": "Lena Okafor",
+          "choice": "hold",
+          "why": "The vault has plenty of cash and my friends are staying put, so there is no immediate reason to panic.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 994
+        },
+        {
+          "id": "agent-38",
+          "name": "Ivan Moreau",
+          "choice": "deposit",
+          "why": "With a healthy vault and no one running, the risk is low and the 0.55% daily return is too good to ignore for my free capital.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "deposit",
+          "why": "The vault is fully solvent with excess cash and the chair's calm assurance makes the risk of a run seem low.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 0
+        }
+      ]
+    },
+    {
+      "day": 7,
+      "round": 1,
+      "epoch": 1,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 13084,
+      "owed": 37384,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-11",
+          "name": "Lena Okafor",
+          "choice": "hold",
+          "why": "The vault is still well above 30%, the bank chair is calm, and my friends haven't run yet, so I'll wait for more certainty before risking my money.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 999
+        },
+        {
+          "id": "agent-38",
+          "name": "Ivan Moreau",
+          "choice": "hold",
+          "why": "The vault health is good and my friends are staying, so I won't panic just yet.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 331
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The chair's calm assurance and low withdrawal rate suggest stability, so I will keep my deposit to avoid losing the potential interest gain.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 364
+        }
+      ]
+    }
+  ]
+}

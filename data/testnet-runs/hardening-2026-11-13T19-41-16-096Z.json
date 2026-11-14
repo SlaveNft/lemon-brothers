@@ -1,0 +1,99 @@
+{
+  "contract": "lemonbank-587f5c93.testnet",
+  "flags": [
+    "--paths"
+  ],
+  "steps": [
+    {
+      "step": "1. ft_transfer to an unregistered account",
+      "ok": false,
+      "tx": "FyPBNrQ4Sv3y8gijNcy5a4kFfDNGoyLwtpEQqT49usU3",
+      "says": "receiver never-registered-mwfdt9yu.testnet is not registered: call storage_deposit for it first",
+      "expected": true
+    },
+    {
+      "step": "2a. storage_deposit for it",
+      "ok": true,
+      "tx": "94tBsKc5k1afb4B4cgSYS3EbtxH41b2BQai5bxEkRxX8",
+      "says": "returned {\"total\":\"2500000000000000000000\",\"available\":\"0\"}; events lemon-bank:register",
+      "expected": true
+    },
+    {
+      "step": "2b. the same ft_transfer",
+      "ok": true,
+      "tx": "FxUfq3v73kWrfK8HDHFHWxAb9YV4YjVFKwoiREUvPYQE",
+      "says": "events nep141:ft_transfer",
+      "expected": true
+    },
+    {
+      "step": "2c. view ft_balance_of(receiver)",
+      "says": "1"
+    },
+    {
+      "step": "3. speech 1 of 3 in one epoch",
+      "ok": true,
+      "tx": "5gpyvnGvPSYa3TsYxt9YUutVx1Vvt1fnJBMjWqaeNJYq",
+      "says": "events lemon-bank:lobby, nep141:ft_burn",
+      "expected": true
+    },
+    {
+      "step": "3. speech 2 of 3 in one epoch",
+      "ok": true,
+      "tx": "EwPy4FsFNqMXv84XGZ33Y7EKqnPYABEBXgk4GBqbQo1h",
+      "says": "events lemon-bank:lobby, nep141:ft_burn",
+      "expected": true
+    },
+    {
+      "step": "3. speech 3 of 3 in one epoch",
+      "ok": false,
+      "tx": "2rmbg7RDY31tnffG8hBer6C4jJrda3vqXHGXR3TrvoeS",
+      "says": "at most 2 speeches per account per epoch",
+      "expected": true
+    },
+    {
+      "step": "4a. submit_run with a seed that is not today's",
+      "ok": false,
+      "tx": "37tDQSLiKo83gKi7UYDVDTt44J6MVj9PC9RQiowSkcV4",
+      "says": "seed 800407834 is not the crisis of the day (day 1, seed 800407833)",
+      "expected": true
+    },
+    {
+      "step": "4b. submit_run with today's seed and a replayable result",
+      "ok": true,
+      "tx": "A5XPhpLJ1tGmirdT2pCdDSNv8kphbhJbVm7kc8udAbbA",
+      "says": "returned true; events lemon-bank:crisis_run",
+      "expected": true
+    },
+    {
+      "step": "4c. submit_run claiming 100 for moves that do not earn it (recorded; every browser flags it)",
+      "ok": true,
+      "tx": "5CHdgJjNUKxkw39BNKiCYfYLpf8C5gX8LE3jnZUvEYCp",
+      "says": "returned true; events lemon-bank:crisis_run",
+      "expected": true
+    },
+    {
+      "step": "5. view storage_balance_bounds",
+      "says": "{\"min\":\"2500000000000000000000\",\"max\":\"2500000000000000000000\"}"
+    },
+    {
+      "step": "5. view ft_total_supply",
+      "says": "\"96721\""
+    },
+    {
+      "step": "5. view get_stats",
+      "says": "{\"rounds_survived\":0,\"rounds_fallen\":0,\"current_streak\":0,\"longest_streak\":0,\"total_minted\":\"0\",\"total_burned\":\"20\",\"since_ms\":1794598852515}"
+    },
+    {
+      "step": "5. view get_runs",
+      "says": "{\"day\":1,\"seed\":800407833,\"today\":1,\"runs\":[{\"account\":\"agent-02.lemonbank-587f5c93.testnet\",\"moves\":\"0n0\",\"score\":100,\"ending\":\"survived\",\"at_ms\":1794598872984},{\"account\":\"agent-01.lemonbank-587f5c93.testnet\",\"moves\":\"1t350.1t500.1n0.1n0.1n0.1n0.1n0.1n0.1n0.1n0\",\"score\":24,\"ending\":\"impeached\",\"at_ms\":1794598868726}]}"
+    },
+    {
+      "step": "5. view ft_balance_of(the bank itself) = reserve + loans",
+      "says": "1033"
+    },
+    {
+      "step": "5. view get_supply_log (last 3)",
+      "says": "[{\"epoch_id\":24,\"round\":4,\"kind\":\"burn\",\"amount\":\"10\",\"memo\":\"lobby fee\",\"at_ms\":1794598852515},{\"epoch_id\":24,\"round\":4,\"kind\":\"burn\",\"amount\":\"10\",\"memo\":\"lobby fee\",\"at_ms\":1794598856695}]"
+    }
+  ]
+}

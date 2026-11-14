@@ -1,0 +1,18 @@
+[package]
+name = "lemon-bank"
+version = "0.1.0"
+edition = "2021"
+description = "NEAR contract: the $LEMON token (NEP-141) and the Lemon Brothers bank, with a chair key capped by the contract."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# near-sdk resolves from the local cargo cache (cargo --offline works).
+# Wasm: cargo build -p lemon-bank --target wasm32-unknown-unknown --release
+[dependencies]
+near-sdk = "5"
+bank-core = { path = "../bank-core", features = ["borsh"] }
+
+[dev-dependencies]
+near-sdk = { version = "5", features = ["unit-testing"] }

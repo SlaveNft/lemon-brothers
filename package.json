@@ -1,0 +1,38 @@
+{
+  "name": "lemon-brothers",
+  "private": true,
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm -w @chair/sim run test && npm -w @chair/chair run test && npm -w @chair/runner run test && npm -w @chair/web run test",
+    "sweep": "npm -w @chair/sim run sweep",
+    "supply": "npm -w @chair/sim run supply",
+    "attest": "node scripts/attest.mjs",
+    "attack": "npm -w @chair/sim run attack",
+    "sweep:crisis": "npm -w @chair/sim run sweep:crisis",
+    "vectors": "npm -w @chair/sim run vectors",
+    "test:contract": "cd contracts && cargo test",
+    "dev": "npm -w @chair/web run dev",
+    "build": "npm -w @chair/web run build",
+    "verify": "npm run test && npm run vectors && npm run test:contract && npm run build",
+    "runner": "npm -w @chair/runner run start",
+    "minds": "tsx scripts/minds.ts",
+    "testnet:deploy": "node scripts/testnet/deploy.mjs",
+    "testnet:keeper": "tsx scripts/testnet/keeper.ts",
+    "testnet:onair": "node scripts/testnet/onair.mjs",
+    "build:contract": "cd contracts && cargo build -p lemon-bank --target wasm32-unknown-unknown --release",
+    "testnet:upgrade": "tsx scripts/testnet/upgrade.mjs",
+    "testnet:verify": "node scripts/testnet/verify.mjs",
+    "verify:deployed": "bash scripts/verify-deployed.sh",
+    "verify:chain": "tsx scripts/verify-chain.ts",
+    "monitor": "node scripts/monitor.mjs"
+  },
+  "devDependencies": {
+    "near-api-js": "7.5.2",
+    "tsx": "4.19.2"
+  }
+}

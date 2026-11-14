@@ -1,0 +1,387 @@
+{
+ "readAt": "2026-11-14T18:16:15.907Z",
+ "contract": "lemonbank-587f5c93.testnet",
+ "keys": 0,
+ "supply": 71226,
+ "ceiling": 150000,
+ "vault": 26759,
+ "owed": 59837,
+ "loans": 31784,
+ "bankDay": 73,
+ "round": 12,
+ "accounts": 21,
+ "burned": 51330,
+ "printed": 25815,
+ "fallen": 5,
+ "survived": 2,
+ "chair": "lemonhawk-24e23cdf.testnet",
+ "owner": "lemon-brothers-587f5c93.sputnik-v2.testnet",
+ "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+ "signer": "89fb781a9530473a6d3bddd6bb0a0536c8d155058798edae88b19153bd8f4350",
+ "statement": "Lemon Brothers remains solvent with strong reserves. We maintain our prudent rate and target. No new minting is required. Trust in our discipline.",
+ "tone": "calm",
+ "rateBps": 150,
+ "targetPermille": 450,
+ "log": [
+  {
+   "day": 37,
+   "kind": "burn",
+   "amount": 10,
+   "memo": "lobby fee"
+  },
+  {
+   "day": 38,
+   "kind": "mint",
+   "amount": 105,
+   "memo": "loan yield"
+  },
+  {
+   "day": 38,
+   "kind": "burn",
+   "amount": 10,
+   "memo": "lobby fee"
+  },
+  {
+   "day": 38,
+   "kind": "burn",
+   "amount": 10,
+   "memo": "lobby fee"
+  },
+  {
+   "day": 39,
+   "kind": "mint",
+   "amount": 107,
+   "memo": "loan yield"
+  },
+  {
+   "day": 40,
+   "kind": "mint",
+   "amount": 106,
+   "memo": "loan yield"
+  },
+  {
+   "day": 40,
+   "kind": "burn",
+   "amount": 10,
+   "memo": "lobby fee"
+  },
+  {
+   "day": 41,
+   "kind": "mint",
+   "amount": 106,
+   "memo": "loan yield"
+  },
+  {
+   "day": 42,
+   "kind": "mint",
+   "amount": 107,
+   "memo": "loan yield"
+  },
+  {
+   "day": 43,
+   "kind": "mint",
+   "amount": 107,
+   "memo": "loan yield"
+  },
+  {
+   "day": 43,
+   "kind": "burn",
+   "amount": 10,
+   "memo": "lobby fee"
+  },
+  {
+   "day": 43,
+   "kind": "burn",
+   "amount": 10,
+   "memo": "lobby fee"
+  },
+  {
+   "day": 44,
+   "kind": "mint",
+   "amount": 117,
+   "memo": "loan yield"
+  },
+  {
+   "day": 45,
+   "kind": "mint",
+   "amount": 118,
+   "memo": "loan yield"
+  },
+  {
+   "day": 45,
+   "kind": "mint",
+   "amount": 1000,
+   "memo": "airdrop"
+  },
+  {
+   "day": 45,
+   "kind": "burn",
+   "amount": 25,
+   "memo": "rumour fee"
+  },
+  {
+   "day": 45,
+   "kind": "mint",
+   "amount": 1000,
+   "memo": "airdrop"
+  },
+  {
+   "day": 46,
+   "kind": "mint",
+   "amount": 118,
+   "memo": "loan yield"
+  },
+  {
+   "day": 46,
+   "kind": "mint",
+   "amount": 1000,
+   "memo": "airdrop"
+  },
+  {
+   "day": 47,
+   "kind": "mint",
+   "amount": 115,
+   "memo": "loan yield"
+  },
+  {
+   "day": 47,
+   "kind": "burn",
+   "amount": 931,
+   "memo": "loan write-off"
+  },
+  {
+   "day": 47,
+   "kind": "mint",
+   "amount": 1000,
+   "memo": "airdrop"
+  },
+  {
+   "day": 48,
+   "kind": "mint",
+   "amount": 118,
+   "memo": "loan yield"
+  },
+  {
+   "day": 49,
+   "kind": "mint",
+   "amount": 121,
+   "memo": "loan yield"
+  },
+  {
+   "day": 50,
+   "kind": "mint",
+   "amount": 119,
+   "memo": "loan yield"
+  },
+  {
+   "day": 51,
+   "kind": "mint",
+   "amount": 207,
+   "memo": "loan yield"
+  },
+  {
+   "day": 52,
+   "kind": "mint",
+   "amount": 181,
+   "memo": "loan yield"
+  },
+  {
+   "day": 52,
+   "kind": "burn",
+   "amount": 2736,
+   "memo": "loan write-off"
+  },
+  {
+   "day": 53,
+   "kind": "mint",
+   "amount": 171,
+   "memo": "loan yield"
+  },
+  {
+   "day": 53,
+   "kind": "burn",
+   "amount": 4689,
+   "memo": "loan write-off"
+  },
+  {
+   "day": 54,
+   "kind": "mint",
+   "amount": 177,
+   "memo": "loan yield"
+  },
+  {
+   "day": 54,
+   "kind": "burn",
+   "amount": 11127,
+   "memo": "fire sale haircut"
+  },
+  {
+   "day": 55,
+   "kind": "mint",
+   "amount": 2,
+   "memo": "loan yield"
+  },
+  {
+   "day": 55,
+   "kind": "burn",
+   "amount": 157,
+   "memo": "collapse haircut"
+  },
+  {
+   "day": 56,
+   "kind": "mint",
+   "amount": 3949,
+   "memo": "bailout"
+  },
+  {
+   "day": 58,
+   "kind": "mint",
+   "amount": 81,
+   "memo": "loan yield"
+  },
+  {
+   "day": 59,
+   "kind": "mint",
+   "amount": 78,
+   "memo": "loan yield"
+  },
+  {
+   "day": 60,
+   "kind": "mint",
+   "amount": 74,
+   "memo": "loan yield"
+  },
+  {
+   "day": 61,
+   "kind": "mint",
+   "amount": 71,
+   "memo": "loan yield"
+  },
+  {
+   "day": 62,
+   "kind": "mint",
+   "amount": 68,
+   "memo": "loan yield"
+  },
+  {
+   "day": 63,
+   "kind": "mint",
+   "amount": 74,
+   "memo": "loan yield"
+  },
+  {
+   "day": 63,
+   "kind": "burn",
+   "amount": 1558,
+   "memo": "loan write-off"
+  },
+  {
+   "day": 64,
+   "kind": "mint",
+   "amount": 124,
+   "memo": "loan yield"
+  },
+  {
+   "day": 64,
+   "kind": "burn",
+   "amount": 786,
+   "memo": "fire sale haircut"
+  },
+  {
+   "day": 64,
+   "kind": "burn",
+   "amount": 3,
+   "memo": "fire sale haircut"
+  },
+  {
+   "day": 64,
+   "kind": "burn",
+   "amount": 12,
+   "memo": "fire sale haircut"
+  },
+  {
+   "day": 64,
+   "kind": "burn",
+   "amount": 7144,
+   "memo": "collapse haircut"
+  },
+  {
+   "day": 65,
+   "kind": "mint",
+   "amount": 3374,
+   "memo": "bailout"
+  },
+  {
+   "day": 66,
+   "kind": "burn",
+   "amount": 6793,
+   "memo": "collapse haircut"
+  },
+  {
+   "day": 67,
+   "kind": "mint",
+   "amount": 3035,
+   "memo": "bailout"
+  },
+  {
+   "day": 69,
+   "kind": "mint",
+   "amount": 78,
+   "memo": "loan yield"
+  },
+  {
+   "day": 70,
+   "kind": "mint",
+   "amount": 75,
+   "memo": "loan yield"
+  },
+  {
+   "day": 71,
+   "kind": "mint",
+   "amount": 159,
+   "memo": "loan yield"
+  },
+  {
+   "day": 72,
+   "kind": "mint",
+   "amount": 190,
+   "memo": "loan yield"
+  },
+  {
+   "day": 72,
+   "kind": "burn",
+   "amount": 2,
+   "memo": "early withdrawal fee"
+  },
+  {
+   "day": 72,
+   "kind": "mint",
+   "amount": 1000,
+   "memo": "airdrop"
+  },
+  {
+   "day": 72,
+   "kind": "mint",
+   "amount": 1000,
+   "memo": "airdrop"
+  },
+  {
+   "day": 73,
+   "kind": "mint",
+   "amount": 180,
+   "memo": "loan yield"
+  },
+  {
+   "day": 73,
+   "kind": "burn",
+   "amount": 2235,
+   "memo": "loan write-off"
+  },
+  {
+   "day": 73,
+   "kind": "burn",
+   "amount": 13,
+   "memo": "early withdrawal fee"
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+  "contract": "lemonbank-587f5c93.testnet",
+  "flags": [
+    "--lock"
+  ],
+  "steps": [
+    {
+      "step": "the bank's own account: delete the full-access key of lemonbank-587f5c93.testnet",
+      "ok": true,
+      "tx": "BC31BkL3HF9vjdqeQe3iispk3KYFudAiTfTQwxKitDb9",
+      "says": "",
+      "expected": true
+    },
+    {
+      "step": "the bank's own account: keys left on lemonbank-587f5c93.testnet",
+      "says": "none"
+    }
+  ]
+}

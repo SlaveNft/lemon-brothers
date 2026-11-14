@@ -1,0 +1,360 @@
+{
+  "contract": "lemonbank-587f5c93.testnet",
+  "startedAt": "2026-11-14T10:50:48.888Z",
+  "dry": false,
+  "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+  "depositors": [
+    {
+      "account": "agent-10.lemonbank-587f5c93.testnet",
+      "character": "nervous by nature, does not trust what officials say, watches what the neighbours do"
+    },
+    {
+      "account": "agent-02.lemonbank-587f5c93.testnet",
+      "character": "hard to scare, tends to believe the bank's chair, makes up their own mind"
+    },
+    {
+      "account": "agent-03.lemonbank-587f5c93.testnet",
+      "character": "likes the interest, stays calm while the vault looks full, leaves the moment it looks thin"
+    }
+  ],
+  "epochs": [
+    {
+      "before": {
+        "round": 6,
+        "epoch": 4,
+        "epochId": 38,
+        "collapsed": false,
+        "supply": "89780",
+        "reserve": "4349",
+        "liabilities": "18900",
+        "reservePermille": "230",
+        "tone": "calm"
+      },
+      "moves": [
+        {
+          "account": "agent-10.lemonbank-587f5c93.testnet",
+          "character": "nervous by nature, does not trust what officials say, watches what the neighbours do",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 38,
+          "before": {
+            "deposit": "0",
+            "wallet": "4441"
+          },
+          "move": {
+            "choice": "run",
+            "why": "The official calm is a mask for panic and 23% reserves are dangerously low for a bank.",
+            "say": "I see the neighbors packing their bags and the vault is already half empty."
+          },
+          "sent": true,
+          "txs": [
+            {
+              "method": "lobby",
+              "hash": "8vWsQXq3WP7WvyXBdhCvp8a7NySKxDrtakkVioYheF9F",
+              "refused": null
+            }
+          ]
+        },
+        {
+          "account": "agent-02.lemonbank-587f5c93.testnet",
+          "character": "hard to scare, tends to believe the bank's chair, makes up their own mind",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 38,
+          "before": {
+            "deposit": "0",
+            "wallet": "4200"
+          },
+          "move": {
+            "choice": "hold",
+            "why": "The vault holds over 23% which is healthy for this stage, and I trust the chair's balance sheet over agent-10's panic.",
+            "say": "The numbers don't lie, and neither should we."
+          },
+          "sent": true,
+          "txs": [
+            {
+              "method": "lobby",
+              "hash": "3qobrr7MLzRUWVjmR3Mm6rgmknP4USR7HRGZezpt3dza",
+              "refused": null
+            }
+          ]
+        },
+        {
+          "account": "agent-03.lemonbank-587f5c93.testnet",
+          "character": "likes the interest, stays calm while the vault looks full, leaves the moment it looks thin",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 38,
+          "before": {
+            "deposit": "0",
+            "wallet": "3038"
+          },
+          "move": {
+            "choice": "run",
+            "why": "With only 23% of deposits in the vault and others already withdrawing, the bank is on the brink of collapse.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        }
+      ],
+      "advance": {
+        "tx": "5cNqaZvhQfVZS6zyuZPYK6okoNEDaQXYuZ1cVpXcwvhe"
+      },
+      "after": {
+        "round": 6,
+        "epoch": 5,
+        "epochId": 39,
+        "collapsed": false,
+        "supply": "89867",
+        "reserve": "4748",
+        "liabilities": "18994",
+        "reservePermille": "249",
+        "tone": "calm"
+      }
+    },
+    {
+      "before": {
+        "round": 6,
+        "epoch": 5,
+        "epochId": 39,
+        "collapsed": false,
+        "supply": "89867",
+        "reserve": "4748",
+        "liabilities": "18994",
+        "reservePermille": "249",
+        "tone": "calm"
+      },
+      "moves": [
+        {
+          "account": "agent-10.lemonbank-587f5c93.testnet",
+          "character": "nervous by nature, does not trust what officials say, watches what the neighbours do",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 39,
+          "before": {
+            "deposit": "0",
+            "wallet": "4431"
+          },
+          "move": {
+            "choice": "run",
+            "why": "The vault is dangerously low at 25% and the official calm tone feels like a distraction before a collapse.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        },
+        {
+          "account": "agent-02.lemonbank-587f5c93.testnet",
+          "character": "hard to scare, tends to believe the bank's chair, makes up their own mind",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 39,
+          "before": {
+            "deposit": "0",
+            "wallet": "4190"
+          },
+          "move": {
+            "choice": "hold",
+            "why": "The reserve ratio is healthy at nearly 25% and the Chair's statement is reassuring, so there is no immediate panic.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        },
+        {
+          "account": "agent-03.lemonbank-587f5c93.testnet",
+          "character": "likes the interest, stays calm while the vault looks full, leaves the moment it looks thin",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 39,
+          "before": {
+            "deposit": "0",
+            "wallet": "3038"
+          },
+          "move": {
+            "choice": "hold",
+            "why": "The vault is thin but not empty, and the chair's calm tone suggests stability for now.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        }
+      ],
+      "advance": {
+        "tx": "6YsvEiHoEVxdzzeHB1WCcB2dBLuDxW56GbANP1SrVABr"
+      },
+      "after": {
+        "round": 6,
+        "epoch": 6,
+        "epochId": 40,
+        "collapsed": false,
+        "supply": "89973",
+        "reserve": "4772",
+        "liabilities": "19089",
+        "reservePermille": "249",
+        "tone": "calm"
+      }
+    },
+    {
+      "before": {
+        "round": 6,
+        "epoch": 6,
+        "epochId": 40,
+        "collapsed": false,
+        "supply": "89973",
+        "reserve": "4772",
+        "liabilities": "19089",
+        "reservePermille": "249",
+        "tone": "calm"
+      },
+      "moves": [
+        {
+          "account": "agent-10.lemonbank-587f5c93.testnet",
+          "character": "nervous by nature, does not trust what officials say, watches what the neighbours do",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 40,
+          "before": {
+            "deposit": "0",
+            "wallet": "4431"
+          },
+          "move": {
+            "choice": "run",
+            "why": "The vault is dangerously low at 25% and the official's calm tone feels like a desperate distraction from the impending collapse.",
+            "say": "The numbers don't lie: 25% reserves is a death sentence."
+          },
+          "sent": true,
+          "txs": [
+            {
+              "method": "lobby",
+              "hash": "FdibvPQoj7MmsgZ7sEwEd8tWrVBA8XoFcLHquEGdMVua",
+              "refused": null
+            }
+          ]
+        },
+        {
+          "account": "agent-02.lemonbank-587f5c93.testnet",
+          "character": "hard to scare, tends to believe the bank's chair, makes up their own mind",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 40,
+          "before": {
+            "deposit": "0",
+            "wallet": "4190"
+          },
+          "move": {
+            "choice": "hold",
+            "why": "The chair's logic is sound and the vault ratio is stable, so I see no reason to panic.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        },
+        {
+          "account": "agent-03.lemonbank-587f5c93.testnet",
+          "character": "likes the interest, stays calm while the vault looks full, leaves the moment it looks thin",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 40,
+          "before": {
+            "deposit": "0",
+            "wallet": "3038"
+          },
+          "move": {
+            "choice": "run",
+            "why": "With only 25% reserves, I am exiting before the vault empties to secure my full principal.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        }
+      ],
+      "advance": {
+        "tx": "BNE8jv7ThKsupe583VuUExNbnuHVuvJWNjvxi5xHp7rB"
+      },
+      "after": {
+        "round": 6,
+        "epoch": 7,
+        "epochId": 41,
+        "collapsed": false,
+        "supply": "90069",
+        "reserve": "4796",
+        "liabilities": "19185",
+        "reservePermille": "249",
+        "tone": "calm"
+      }
+    },
+    {
+      "before": {
+        "round": 6,
+        "epoch": 7,
+        "epochId": 41,
+        "collapsed": false,
+        "supply": "90069",
+        "reserve": "4796",
+        "liabilities": "19185",
+        "reservePermille": "249",
+        "tone": "calm"
+      },
+      "moves": [
+        {
+          "account": "agent-10.lemonbank-587f5c93.testnet",
+          "character": "nervous by nature, does not trust what officials say, watches what the neighbours do",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 41,
+          "before": {
+            "deposit": "0",
+            "wallet": "4421"
+          },
+          "move": {
+            "choice": "run",
+            "why": "The chair's claim of 250 permille reserves contradicts the visible 24.9% cash ratio, and I refuse to wait for the vault to empty.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        },
+        {
+          "account": "agent-02.lemonbank-587f5c93.testnet",
+          "character": "hard to scare, tends to believe the bank's chair, makes up their own mind",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 41,
+          "before": {
+            "deposit": "0",
+            "wallet": "4190"
+          },
+          "move": {
+            "choice": "hold",
+            "why": "The reserve ratio is healthy and I trust the chair's commitment to solvency over panic.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        },
+        {
+          "account": "agent-03.lemonbank-587f5c93.testnet",
+          "character": "likes the interest, stays calm while the vault looks full, leaves the moment it looks thin",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "epochId": 41,
+          "before": {
+            "deposit": "0",
+            "wallet": "3038"
+          },
+          "move": {
+            "choice": "hold",
+            "why": "The vault is thin but stable, and I have nothing to deposit anyway.",
+            "say": ""
+          },
+          "sent": true,
+          "txs": []
+        }
+      ],
+      "advance": {
+        "tx": "3eayty41v85o4pprS6LKd2dN73dWsArR8XnQ66qiszvY"
+      },
+      "after": {
+        "round": 6,
+        "epoch": 8,
+        "epochId": 42,
+        "collapsed": false,
+        "supply": "90176",
+        "reserve": "4820",
+        "liabilities": "19281",
+        "reservePermille": "249",
+        "tone": "calm"
+      }
+    }
+  ]
+}

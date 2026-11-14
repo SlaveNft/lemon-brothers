@@ -1,0 +1,13 @@
+node_modules
+dist
+target
+.env
+.env.*
+*.log
+.testnet
+!.env.example
+*.tsbuildinfo
+# the hourly keeper's own logs stay on the machine that runs it
+data/testnet-runs/2026-11-1[4-9]T*.jsonl
+data/testnet-runs/2026-11-2*.jsonl
+data/testnet-runs/2026-1[2-9]-*.jsonl

@@ -1,0 +1,23 @@
+{
+  "started": "2026-11-14T16:03:06.551Z",
+  "account": "guest.lemonbank-587f5c93.testnet",
+  "amount": "100",
+  "deposit": {
+    "tx": "9FoxW2zSEkYsmxUyTdY9YE1cZDz4p6UXPtwrzZHHiWWJ",
+    "epoch_id": 71
+  },
+  "withdraw": {
+    "tx": "5mxKQfyT2ChmEHXHPeAPqcSNCcVDckMygUKeKsBoNhw9",
+    "epoch_id": 72,
+    "rate_bps": "150",
+    "fee": {
+      "account_id": "guest.lemonbank-587f5c93.testnet",
+      "withdrawn": "100",
+      "fee": "2",
+      "rate_bps": "150"
+    },
+    "wallet_before": "4841",
+    "wallet_after": "4939"
+  },
+  "netGain": "-2"
+}

@@ -1,0 +1,29 @@
+{
+ "at": "2026-11-14T17:35:50.931Z",
+ "page": "https://slavenft.github.io/lemon-brothers/",
+ "guest": "lemon-guest-1aa4d0a8.testnet",
+ "crisisSeed": 159876298,
+ "steps": [
+  {
+   "name": "get the coin",
+   "tx": "5C6Gt6mTCZno7PaMYEFQAszGmVmFPes8YbgEgv2h6Xik",
+   "seconds": 7.7,
+   "wallet": 1000,
+   "deposit": 0
+  },
+  {
+   "name": "put 500 in the bank",
+   "tx": "BZcmnwaj7NCMctKLoj72FkMpAhuKdVM54cG6TQCAhnMa",
+   "seconds": 2.5,
+   "wallet": 500,
+   "deposit": 499
+  },
+  {
+   "name": "take everything out",
+   "tx": "2CC6W9MLtp3zwdvz5FpVScAWng8B63hNkSso7q2UAW9k",
+   "seconds": 2.5,
+   "wallet": 999,
+   "deposit": 0
+  }
+ ]
+}
