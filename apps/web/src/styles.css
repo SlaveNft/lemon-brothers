@@ -217,6 +217,14 @@ footer button { padding: 5px 12px; min-height: 34px; }
   .chairgame .question .ask { font-size: 22px; }
 }
 @media (max-width: 999px) {
+  /* on a phone the question comes right under the picture: the meters and the town's reasons follow it */
+  .chairgame .play { display: flex; flex-direction: column; }
+  .chairgame .play > main { display: contents; }
+  .chairgame .play > .pressroom { order: 0; }
+  .chairgame .play .question, .chairgame .play .ending { order: 1; }
+  .chairgame .play > .meters { order: 2; }
+  .chairgame .play > main > :not(.question):not(.ending) { order: 3; }
+  .chairgame .play-note { font-size: 14px; }
   .chairgame .play > .pressroom { position: sticky; top: 0; z-index: 5; margin-left: -24px; margin-right: -24px; border-radius: 0; box-shadow: none; }
   .chairgame .play .question, .chairgame .play .ending { scroll-margin-top: calc(clamp(180px, 32vh, 300px) + 12px); }
 }
@@ -432,3 +440,16 @@ a.btn.primary { background: var(--fg); border-color: var(--fg); color: var(--bg)
   .tab .wide { display: none; } .tab .narrow { display: inline; }
   .tab { padding: 8px 12px; }
 }
+
+/* the real bank's round (chain/Round.tsx) */
+.round { margin-top: 24px; }
+.round-days { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin: 6px 0 12px; max-width: 420px; }
+.round-days span { height: 8px; border-radius: 4px; background: var(--border-soft); }
+.round-days span.past { background: var(--muted); } .round-days span.now { background: var(--fg); } .round-days span.fell { background: var(--red); }
+.round-rule { margin: 0 0 14px; line-height: 1.55; max-width: 46em; color: var(--fg-2); }
+.round-trust { max-width: 420px; margin: 0 0 18px; }
+
+.round-sub { font-size: 18px; margin: 8px 0 4px; }
+.round .tag { margin-left: 8px; padding: 1px 8px; border-radius: 8px; background: var(--border-soft); font-family: var(--font-body, inherit); }
+.board-row.me { background: var(--amber-bg); }
+.bridge { margin: 14px 0 6px; line-height: 1.55; }

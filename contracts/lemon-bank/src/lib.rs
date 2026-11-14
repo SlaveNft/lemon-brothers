@@ -2,9 +2,9 @@
 //! fractional-reserve bank in one contract. All rules live in `bank-core`; this wrapper maps NEAR accounts, time and
 //! randomness onto it, logs events (NEP-297), and enforces who may call what:
 //!
-//! - `set_policy` / `set_policy_attested`: only the chair account. The chair holds a function-call access key limited
-//!   to these two methods, and `bank-core` rejects every out-of-bounds field, so a persuaded or jailbroken model cannot
-//!   do more.
+//! - `open_question`, `set_policy` / `set_policy_attested`: only the chair account. The chair holds a function-call
+//!   access key limited to these methods, and `bank-core` rejects every out-of-bounds field, so a persuaded or
+//!   jailbroken model cannot do more.
 //! - `set_chair`, `set_chair_signer`, `set_owner`: only the owner, the holders' DAO (Sputnik DAO on testnet).
 //!   `set_chair` is impeachment.
 //! - `advance_epoch`: anyone, once the epoch has elapsed (a keeper calls it; so can any judge).
@@ -14,65 +14,79 @@
 //! that key. The relayer passes the exact request and response bodies; the contract hashes both itself and verifies
 //! the ed25519 signature over "{model}:{sha256(request)}:{sha256(response)}".
 //!
+//! The question is frozen on chain before the model is asked. Once a bank day, the chair calls `open_question`: the
+//! contract writes down its own numbers at that moment (supply, reserve, loans, liabilities, reserve ratio, the closed
+//! day's outflow and loan write-off, how much the chair may print) and how many speeches and rumours have been made,
+//! and from then on refuses new ones until the next bank day. `get_question` returns the observation to send.
+//!
 //! Checked on chain (`check_request`, `decision_from_answer`):
 //! - the request is canonical JSON with only the known fields, the pinned model, the decoding settings (`json_object`,
-//!   thinking off, temperature within 0..1, at most 1024 output tokens), and exactly one system message whose sha256
-//!   is the DAO-pinned prompt (the chair's constitution) plus one user message, the observation;
-//! - in the observation: the current `epochId`, `round`, `epoch`, `epochsPerRound`, the current policy's rate, target
-//!   and gate, and that the quoted speeches and rumours are a prefix of the ones on chain, word for word;
+//!   thinking off, temperature 0, at most 1024 output tokens), and exactly one system message whose sha256 is the
+//!   DAO-pinned prompt (the chair's constitution) plus one user message, the observation;
+//! - the observation equals the frozen question: every number, the current `epochId`, `round`, `epoch`,
+//!   `epochsPerRound` and policy, and exactly the speeches and rumours made before it, word for word (none invented,
+//!   none left out);
 //! - the answer names the same `epochId`, so an old answer cannot be replayed; the policy is read out of the signed
 //!   answer, and the bounds in `bank-core` apply to it like to any other policy.
 //!
-//! NOT checked: every other number in the observation. `supply`, `reserve`, `loans`, `liabilities`,
-//! `reservePermille`, `outflowPermille`, `mintRoom`, `writedownPermille`, `moodPermille` and `credibility` only have to
-//! be whole numbers. Some are a snapshot of balances that keep moving within the epoch, some (mood, credibility) are
-//! computed off chain and exist nowhere in contract state. The contract does not compare any of them with its own
-//! state, so the relayer (the holder of the chair key) can show the model a bank that is healthier or sicker than the
-//! real one and get a signed answer to that picture. The relayer may also leave out the latest speeches and rumours
-//! (a prefix passes), and may ask the model several times and submit the answer it likes best (the temperature is not
-//! pinned to 0). So the attested path proves: this policy is the pinned model's answer, under the pinned prompt, to a
-//! question about this epoch that quotes only real speeches. It does not prove that the model saw the bank's true
-//! balances. What a misled model can do is still capped by `bank-core`'s bounds.
+//! The chair's `credibility` is the contract's own too (`Credibility`, kept by `advance_epoch` by the simulation's rule).
+//!
+//! What this leaves to trust. One number in the question is the chair's own statement: `moodPermille`, the share of
+//! the keeper's simulated town that is past half its panic threshold, which exists nowhere in contract state. It is
+//! frozen and logged (`question` event) before the model answers, so anyone can see what the chair was told, but the
+//! contract cannot say it is right. The relayer chooses the moment within the bank day at which the question is frozen (the
+//! numbers are then true, just of that moment). Temperature 0 asks for the model's most likely answer; a provider
+//! may still return slightly different text for the same request, so asking twice is not strictly ruled out. Whatever
+//! a misled model answers is still capped by `bank-core`'s bounds.
 //!
 //! NEAR AI's model signing key is shared by every client of that model, which is why the request is checked at all: a
 //! signature alone only proves that *someone* asked the model *something*.
 //!
-//! Token accounting (NEP-141 events): the bank's own money (reserve + loans) is reported as the balance of the
-//! contract account, so `ft_balance_of` over all accounts sums to `ft_total_supply`. A deposit or an insurance premium
-//! is an `ft_transfer` user -> bank, a withdrawal or a collapse settlement bank -> user; loan yield, policy mint,
-//! bailout, airdrop, insurance payout and genesis are `ft_mint`; fees, fire-sale haircuts and loan write-offs are
-//! `ft_burn`. One call logs at most one event per kind with at most `MAX_EVENT_ENTRIES` entries (a receipt may carry
-//! 100 logs / 16 KB), so after a collapse with more depositors than that an indexer has to re-read balances with
-//! `ft_balance_of` (the `collapse` event says how many entries were left out).
+//! Token accounting (NEP-141 events): the bank's own money (reserve + loans, plus what past collapses still owe
+//! depositors) is reported as the balance of the contract account, so `ft_balance_of` over all accounts sums to
+//! `ft_total_supply`. A deposit or an insurance premium is an `ft_transfer` user -> bank, a withdrawal, a collapse
+//! settlement or an insurance payout bank -> user; loan yield, policy mint, bailout, airdrop, the insurance printed at
+//! a collapse and genesis are `ft_mint`; fees, fire-sale haircuts and loan write-offs are `ft_burn`. Every movement is
+//! logged: entries are split into events of at most `MAX_EVENT_ENTRIES`, and no call moves more than a bounded number
+//! of accounts, so the logs of one call always fit in a receipt.
+//!
+//! Accounts: one stored record per account (`IterableMap`), paid for by whoever registers it (NEP-145, the exact
+//! byte cost measured when the bank is created) and released with `storage_unregister`. There is no cap on the
+//! number of accounts and no call iterates over them: a collapse writes one `CollapseRecord`, and each account
+//! collects its share on its next touch (or when anyone calls `settle` for it).
 //!
 //! Side records (crisis leaderboard, supply log, stats) live OUTSIDE the root state, under their own raw storage keys
 //! (`x:…`, Borsh), read only by the calls that need them; a missing key means "empty". The root `Contract` layout is
 //! untouched, so this build upgrades the deployed contract with the code alone (no `migrate`).
 //!
-//! Storage note: the whole bank state is one value. That is fine for a hackathon town of a few hundred accounts, and a
-//! stated limit; a production version would move accounts into a `LookupMap`. A new account is paid for by whoever
-//! registers it (`storage_deposit`); `ft_transfer` never creates one.
+//! A new account is paid for by whoever registers it (`storage_deposit`, or an `airdrop` with the deposit attached);
+//! `ft_transfer` never creates one.
 
 // `set_policy` and `check_policy` take the policy field by field: that is the contract's public interface.
 #![allow(clippy::too_many_arguments, clippy::manual_is_multiple_of)]
 
-use bank_core::{Bank, Event, Policy, LOBBY_FEE, MAX_TEXT_BYTES, RUMOR_FEE};
+use bank_core::{Account, Bank, CollapseRecord, Event, Policy, LOBBY_FEE, MAX_TEXT_BYTES, RUMOR_FEE};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::{json, Value};
-use near_sdk::{env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise};
+use near_sdk::store::{IterableMap, LookupMap};
+use near_sdk::{env, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise};
 
-/// Bytes one account adds to the state at most: its id twice (64 bytes each plus a length prefix, in `order` and as the
-/// map key) and 81 bytes of balances = 217, rounded up. `storage_deposit` charges for this many bytes.
-pub const ACCOUNT_STORAGE_BYTES: u128 = 250;
-/// Most entries in one batched event. Worst case (64-byte account ids, a collapse with both lists full) the logs of
-/// one call stay under 10 KB of the 16 KB a receipt may carry.
+/// Most accounts one `settle` call pays out (each can log two token movements).
+pub const MAX_SETTLE_BATCH: usize = 20;
+
+#[near(serializers = [borsh])]
+#[derive(BorshStorageKey)]
+enum StorageKey {
+    Accounts,
+    Records,
+}
+/// Most entries in one event; a longer list is split over several events.
 pub const MAX_EVENT_ENTRIES: usize = 25;
 /// `new` logs the genesis mints in batches of `MAX_EVENT_ENTRIES`; this keeps them within one receipt's log limits.
 pub const MAX_GENESIS_ACCOUNTS: usize = 100;
 /// Longest epoch `new` accepts (a day). A longer one would freeze the game: only `advance_epoch` moves time.
 pub const MAX_EPOCH_SECONDS: u64 = 86_400;
-/// Gas kept back for `ft_resolve_transfer`, and for `ft_transfer_call` itself plus scheduling the two promises. Both
-/// read and write the whole bank state, so they are more generous than the reference token's 5 Tgas.
+/// Gas kept back for `ft_resolve_transfer`, and for `ft_transfer_call` itself plus scheduling the two promises.
 const GAS_FOR_RESOLVE_TRANSFER: Gas = Gas::from_tgas(20);
 const GAS_FOR_FT_TRANSFER_CALL: Gas = Gas::from_tgas(40);
 
@@ -84,7 +98,6 @@ pub const MAX_RUNS_PER_DAY: usize = 20;
 pub const MAX_RUN_DAYS: usize = 7;
 /// The supply log keeps this many latest records.
 pub const SUPPLY_LOG_SIZE: u64 = 60;
-pub const ENDINGS: [&str; 4] = ["survived", "run", "impeached", "hyperinflation"];
 
 // Raw storage keys of the side records. None of them is part of the root state.
 const KEY_RUN_DAYS: &[u8] = b"x:runs"; // Vec<u32>: the days that have a board, ascending
@@ -93,25 +106,154 @@ const KEY_SUPPLY_COUNT: &[u8] = b"x:slog"; // u64: records ever appended
 const KEY_SUPPLY_SLOT: &[u8] = b"x:sl:"; // + (index % SUPPLY_LOG_SIZE) as u8 -> SupplyRecord
 const KEY_STATS: &[u8] = b"x:stats"; // Stats
 const KEY_MAX_SUPPLY: &[u8] = b"x:cap"; // u128: the most LEMON that may ever exist; absent on a bank deployed before the rule
-const KEY_DEPOSIT_EPOCH: &[u8] = b"x:dep:"; // + account id -> u64: the epoch of the account's latest deposit
+const KEY_FRESH: &[u8] = b"x:new:"; // + account id -> FreshShares: shares bought this bank day and the day before
 const KEY_LAST_RATE: &[u8] = b"x:rate"; // u128: the rate (bps) the latest `advance_epoch` added to every deposit
+const KEY_CLOSED_DAY: &[u8] = b"x:day"; // ClosedDay: outflow and write-down of the bank day the latest advance closed
+const KEY_CREDIBILITY: &[u8] = b"x:cred"; // Credibility: how far the town believes the chair, kept by advance_epoch
+const KEY_QUESTION: &[u8] = b"x:q"; // Question: what the chair is asked this bank day, frozen before the model reads it
 
-/// Most accounts the bank holds. The whole bank is one stored value that every call reads and writes, so its size has
-/// to stay bounded; the cap also bounds what free airdrop accounts can cost the contract in storage.
-pub const MAX_ACCOUNTS: usize = 500;
-
-/// The early-withdrawal fee: money taken out in the first bank day after the account's latest deposit pays back the
-/// interest that one `advance_epoch` added (`rate_bps` of what is taken out, rounded up, never more than it). It closes
-/// the round trip deposit -> advance_epoch -> withdraw_all, which otherwise collects a day's interest at no risk.
+/// The early-withdrawal fee: money deposited in the bank day before this one has had one `advance_epoch` add
+/// interest without staying a full bank day, so taking it out now pays that interest back (`rate_bps` of it, rounded
+/// up, never more than it). It closes the round trip deposit -> advance_epoch -> withdraw_all, which otherwise collects
+/// a day's interest at no risk. Which money a withdrawal takes is `FreshShares::take`.
 pub fn early_withdrawal_fee(withdrawn: u128, rate_bps: u128) -> u128 {
     (withdrawn * rate_bps).div_ceil(10_000).min(withdrawn)
 }
 
-fn deposit_epoch_key(account: &str) -> Vec<u8> {
-    [KEY_DEPOSIT_EPOCH, account.as_bytes()].concat()
+/// The shares an account bought in bank day `epoch_id` (`today`) and in the day before (`yesterday`), still held.
+/// Only `yesterday`'s shares have had interest added without staying a full bank day: they pay the early-withdrawal
+/// fee when they leave. Older shares are free; today's have earned nothing yet. Kept per account, so a new deposit
+/// adds to today's shares and never changes how old the rest of the deposit is.
+#[near(serializers = [borsh])]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FreshShares {
+    pub epoch_id: u64,
+    pub today: u128,
+    pub yesterday: u128,
 }
 
-/// One leaderboard claim. The contract cannot replay the simulation: `score` and `ending` are what the caller says.
+impl FreshShares {
+    /// The same record seen from bank day `now`: one day on, today's shares are yesterday's; two days on, none are fresh.
+    pub fn on(self, now: u64) -> Self {
+        match now.checked_sub(self.epoch_id) {
+            Some(0) => self,
+            Some(1) => FreshShares { epoch_id: now, today: 0, yesterday: self.today },
+            _ => FreshShares { epoch_id: now, today: 0, yesterday: 0 },
+        }
+    }
+
+    /// A withdrawal burns `burned` shares: today's first (they earned nothing), then yesterday's, then older ones.
+    /// Returns how many of yesterday's it took: the part of the withdrawal that pays the fee. Taking the freshest
+    /// money first means a small new deposit cannot shield yesterday's money: it leaves first and earned nothing.
+    pub fn take(&mut self, burned: u128) -> u128 {
+        let t = burned.min(self.today);
+        self.today -= t;
+        let y = (burned - t).min(self.yesterday);
+        self.yesterday -= y;
+        y
+    }
+}
+
+fn fresh_key(account: &str) -> Vec<u8> {
+    [KEY_FRESH, account.as_bytes()].concat()
+}
+
+/// An account's fresh shares as of bank day `now`.
+fn fresh_of(account: &str, now: u64) -> FreshShares {
+    load::<FreshShares>(&fresh_key(account)).unwrap_or_default().on(now)
+}
+
+/// Keep the record only while it holds fresh shares.
+fn keep_fresh(account: &str, f: FreshShares) {
+    if f.today == 0 && f.yesterday == 0 { env::storage_remove(&fresh_key(account)); } else { store(&fresh_key(account), &f); }
+}
+
+/// What the latest `advance_epoch` saw of the bank day it closed: withdrawals as permille of what depositors held
+/// (`outflow / (liabilities + outflow)`, rounded down as the simulation does) and the loan write-off it drew.
+#[near(serializers = [borsh])]
+#[derive(Clone, Copy, Default)]
+struct ClosedDay {
+    outflow_permille: u128,
+    writedown_permille: u128,
+}
+
+/// The chair's question for one bank day, frozen by `open_question` before anyone asks the model: the bank's own
+/// numbers at that moment, how many speeches and rumours had been made, and the two figures the contract cannot know
+/// (the town's mood and the chair's credibility come from the keeper's simulated town) as the chair stated them.
+/// `set_policy_attested` accepts only an answer to exactly this question.
+#[near(serializers = [borsh])]
+#[derive(Clone)]
+pub struct Question {
+    pub epoch_id: u64,
+    pub supply: u128,
+    pub reserve: u128,
+    pub loans: u128,
+    pub liabilities: u128,
+    pub reserve_permille: u128,
+    pub outflow_permille: u128,
+    pub writedown_permille: u128,
+    pub mint_room: u128,
+    pub mood_permille: u32,
+    pub credibility: u32,
+    pub speeches: u32,
+    pub rumors: u32,
+    pub at_ms: u64,
+}
+
+/// Withdrawals of a bank day as permille of what depositors held: `outflow / (liabilities + outflow)`, rounded down.
+fn outflow_permille(outflow: u128, liabilities: u128) -> u128 {
+    (outflow * 1000).checked_div(liabilities + outflow).unwrap_or(0)
+}
+
+/// The chair's credibility (0..1000) and the outflow of the day before, by the rule of the simulation
+/// (`packages/sim/src/world.ts`, `AGENT` in rules.ts): calm or confident words followed by a day whose outflow rose
+/// above 6% are remembered as a lie (-200, never below 200); any other day wins back 50 (never above 1,000). After a
+/// collapse the bailout restores at least 500 (fresh money behind a fresh promise); an impeachment starts the new
+/// chair at 1,000. The town's agents read it; the chair is told it in its question.
+#[near(serializers = [borsh])]
+#[derive(Clone, Copy)]
+pub struct Credibility {
+    pub value: u32,
+    pub last_outflow_permille: u128,
+}
+
+pub const CREDIBILITY_START: u32 = 1000;
+pub const CREDIBILITY_FLOOR: u32 = 200;
+pub const CREDIBILITY_LIE_PENALTY: u32 = 200;
+pub const CREDIBILITY_RECOVER: u32 = 50;
+pub const CREDIBILITY_LIE_OUTFLOW_PERMILLE: u128 = 60;
+pub const CREDIBILITY_AFTER_BAILOUT: u32 = 500;
+
+impl Default for Credibility {
+    fn default() -> Self {
+        Credibility { value: CREDIBILITY_START, last_outflow_permille: 0 }
+    }
+}
+
+impl Credibility {
+    /// The end of a bank day: `calm_words` if the chair's statement that day was calm or confident.
+    pub fn close_day(&mut self, calm_words: bool, outflow_permille: u128) {
+        self.value = if calm_words && outflow_permille > self.last_outflow_permille && outflow_permille > CREDIBILITY_LIE_OUTFLOW_PERMILLE {
+            self.value.saturating_sub(CREDIBILITY_LIE_PENALTY).max(CREDIBILITY_FLOOR)
+        } else {
+            (self.value + CREDIBILITY_RECOVER).min(CREDIBILITY_START)
+        };
+        self.last_outflow_permille = outflow_permille;
+    }
+
+    /// The bailout after a collapse.
+    pub fn bailout(&mut self) {
+        self.value = self.value.saturating_sub(CREDIBILITY_LIE_PENALTY).max(CREDIBILITY_FLOOR).max(CREDIBILITY_AFTER_BAILOUT);
+        self.last_outflow_permille = 0;
+    }
+}
+
+/// The question of the current bank day, if the chair has opened one.
+fn question_for(epoch_id: u64) -> Option<Question> {
+    load::<Question>(KEY_QUESTION).filter(|q| q.epoch_id == epoch_id)
+}
+
+/// One leaderboard claim.
 #[near(serializers = [borsh])]
 struct Run {
     account: String,
@@ -171,16 +313,6 @@ pub fn crisis_seed(day: u32) -> u32 {
         0 => 1,
         s => s,
     }
-}
-
-/// `^[012][nrtmg][0-9]{1,9}(\.[012][nrtmg][0-9]{1,9}){0,9}$`: one to ten `answer lever value` triples joined by dots
-/// (`encodeMoves` in packages/sim/src/crisis.ts).
-fn moves_are_well_formed(moves: &str) -> bool {
-    let triple = |t: &str| {
-        let b = t.as_bytes();
-        (3..=11).contains(&b.len()) && matches!(b[0], b'0'..=b'2') && matches!(b[1], b'n' | b'r' | b't' | b'm' | b'g') && b[2..].iter().all(u8::is_ascii_digit)
-    };
-    moves.split('.').count() <= 10 && moves.split('.').all(triple)
 }
 
 fn hex(b: &[u8]) -> String {
@@ -243,10 +375,21 @@ fn decision_from_answer(response: &str) -> Result<(Option<u64>, Policy), String>
     Ok((d["epoch_id"].as_u64(), policy))
 }
 
-#[near(contract_state)]
+/// NEP-330 source metadata (`contract_source_metadata`): the version and link come from the build (`NEP330_VERSION`,
+/// `NEP330_LINK`, else Cargo.toml), and a reproducible build adds its `build_info`.
+#[near(contract_state, contract_metadata(
+    standard(standard = "nep141", version = "1.0.0"),
+    standard(standard = "nep145", version = "1.0.0"),
+    standard(standard = "nep297", version = "1.0.0"),
+))]
 #[derive(PanicOnDefault)]
 pub struct Contract {
+    /// The bank's totals; its account and record working sets are filled from the maps below for each call.
     bank: Bank,
+    accounts: IterableMap<String, Account>,
+    records: LookupMap<u32, CollapseRecord>,
+    /// Storage bytes one account costs, measured when the bank was created; `storage_deposit` charges this.
+    account_bytes: u64,
     epoch_ms: u64,
     last_epoch_ms: u64,
     /// ed25519 public key (hex) of the chair model's TEE signing key, pinned by the DAO. None = unattested mode.
@@ -255,18 +398,6 @@ pub struct Contract {
     chair_model: String,
     /// sha256 (hex) of the chair's system prompt, pinned by the DAO together with the signing key.
     chair_prompt: Option<String>,
-}
-
-/// State layout before `chair_prompt` existed (wasm 1b0f25c3…), read once by `migrate`. The build deployed after that
-/// (wasm d3d41813…) already has today's layout: nothing was added to the stored state since (registration is "the
-/// account exists in the bank", the speech caps count the stored speeches), so it upgrades without `migrate`.
-#[near(serializers = [borsh])]
-struct ContractV1 {
-    bank: Bank,
-    epoch_ms: u64,
-    last_epoch_ms: u64,
-    chair_signer: Option<String>,
-    chair_model: String,
 }
 
 fn ok(r: Result<(), String>) {
@@ -279,14 +410,14 @@ fn u(x: u128) -> String {
     x.to_string()
 }
 
-/// The contract's own event for a core event; None for the per-account ones a collapse produces (they are summed
-/// into the `collapse` event instead, see `flush`).
+/// The contract's own event for a core event; None for settlements (one `settle` event per call lists them, see
+/// `flush`).
 fn event_json(e: &Event) -> Option<Value> {
     Some(match e {
         Event::Airdrop { who, amount } => json!({"event": "airdrop", "data": [{"account_id": who, "amount": u(*amount)}]}),
         Event::Deposit { who, amount } => json!({"event": "deposit", "data": [{"account_id": who, "amount": u(*amount)}]}),
         Event::Withdraw { who, amount, fire_sold, burned } => json!({"event": "withdraw", "data": [{"account_id": who, "amount": u(*amount), "fire_sold": u(*fire_sold), "burned": u(*burned)}]}),
-        Event::Collapse { who, assets, liabilities, burned } => json!({"event": "collapse", "data": [{"triggered_by": who, "assets": u(*assets), "liabilities": u(*liabilities), "burned": u(*burned)}]}),
+        Event::Collapse { who, assets, liabilities, burned, insurance } => json!({"event": "collapse", "data": [{"triggered_by": who, "assets": u(*assets), "liabilities": u(*liabilities), "burned": u(*burned), "insurance": u(*insurance)}]}),
         Event::Settle { .. } | Event::InsurancePayout { .. } => return None,
         Event::Policy { policy: p } => json!({"event": "policy", "data": [{"rate": u(p.rate), "target": u(p.target), "mint": u(p.mint), "gate": u(p.gate), "tone": p.tone, "statement": p.statement, "attestation": p.attestation}]}),
         Event::Lobby { who, text } => json!({"event": "lobby", "data": [{"account_id": who, "text": text}]}),
@@ -300,19 +431,13 @@ fn event_json(e: &Event) -> Option<Value> {
     })
 }
 
-/// How many of `n` batched entries do not fit in one event.
-fn t_omitted(n: usize) -> usize {
-    n.saturating_sub(MAX_EVENT_ENTRIES)
-}
-
 fn log_event(standard: &str, event: &str, data: Value) {
     env::log_str(&format!("EVENT_JSON:{}", json!({"standard": standard, "version": "1.0.0", "event": event, "data": data})));
 }
 
-/// One NEP-141 event of a kind with the first `MAX_EVENT_ENTRIES` entries; nothing for an empty list.
+/// NEP-141 events of a kind, `MAX_EVENT_ENTRIES` entries each; nothing for an empty list.
 fn log_nep141(event: &str, entries: &[Value]) {
-    if entries.is_empty() { return; }
-    log_event("nep141", event, json!(entries[..entries.len().min(MAX_EVENT_ENTRIES)]));
+    for batch in entries.chunks(MAX_EVENT_ENTRIES) { log_event("nep141", event, json!(batch)); }
 }
 
 /// The token movements of one call, as NEP-141 event entries.
@@ -362,55 +487,41 @@ impl Ledger {
 
 #[near]
 impl Contract {
-    /// `genesis`: initial wallets (the simulated crowd's omnibus account and the agent sub-accounts).
+    /// `genesis`: initial wallets (the simulated crowd's omnibus account and the agent sub-accounts). The deployer
+    /// funds the contract account, which pays for the genesis accounts' storage.
     #[init]
     pub fn new(owner_id: AccountId, chair_id: AccountId, genesis: Vec<(AccountId, U128)>, epoch_seconds: u64) -> Self {
         require!((5..=MAX_EPOCH_SECONDS).contains(&epoch_seconds), "epoch must be between 5 seconds and a day (86400 seconds)");
         require!(genesis.len() <= MAX_GENESIS_ACCOUNTS, "at most 100 genesis accounts");
         let g: Vec<(String, u128)> = genesis.into_iter().map(|(a, x)| (a.to_string(), x.0)).collect();
-        // Genesis accounts are registered by the deployer (who funds the contract account) and their LEMON is minted.
         let mints: Vec<Value> = g.iter().filter(|(_, x)| *x > 0).map(|(a, x)| json!({"owner_id": a, "amount": u(*x), "memo": "genesis"})).collect();
-        for batch in mints.chunks(MAX_EVENT_ENTRIES) { log_nep141("ft_mint", batch); }
+        log_nep141("ft_mint", &mints);
         let bank = Bank::new(owner_id.as_str(), chair_id.as_str(), &g);
         // the ceiling is fixed here, once: the opening supply plus a quarter (bank-core, MAX_SUPPLY_PERMILLE)
         store(KEY_MAX_SUPPLY, &bank.max_supply);
         log_event("lemon-bank", "max_supply", json!([{"max_supply": u(bank.max_supply)}]));
-        Self {
+        let mut c = Self {
             bank,
+            accounts: IterableMap::new(StorageKey::Accounts),
+            records: LookupMap::new(StorageKey::Records),
+            account_bytes: 0,
             epoch_ms: epoch_seconds * 1000,
             last_epoch_ms: env::block_timestamp_ms(),
             chair_signer: None,
             chair_model: String::new(),
             chair_prompt: None,
-        }
-    }
-
-    /// One-time state upgrade from the layout without `chair_prompt` (`ContractV1`). Only the contract account can call
-    /// it (it is batched with the code deploy), and it fails on state that is already in the current layout. State
-    /// written by the d3d41813 build is in the current layout and must NOT be migrated: deploy the code alone.
-    #[private]
-    #[init(ignore_state)]
-    pub fn migrate() -> Self {
-        let old: ContractV1 = env::state_read().unwrap_or_else(|| env::panic_str("no state to migrate"));
-        Self {
-            bank: old.bank,
-            epoch_ms: old.epoch_ms,
-            last_epoch_ms: old.last_epoch_ms,
-            chair_signer: old.chair_signer,
-            chair_model: old.chair_model,
-            chair_prompt: None,
-        }
-    }
-
-    /// The ceiling of a bank that was deployed before the rule existed: set once, by the contract account itself (the
-    /// call is batched with the code upgrade), and never below the supply in existence. A bank created by `new` has
-    /// its ceiling from the start, so this call fails on it; once set, nothing can change it.
-    #[private]
-    pub fn seal_max_supply(&mut self, max_supply: U128) {
-        require!(env::storage_read(KEY_MAX_SUPPLY).is_none(), "the ceiling is already set and cannot be changed");
-        require!(max_supply.0 >= self.bank.supply, "the ceiling cannot be below the supply in existence");
-        store(KEY_MAX_SUPPLY, &max_supply.0);
-        log_event("lemon-bank", "max_supply", json!([{"max_supply": u(max_supply.0)}]));
+        };
+        // what one account costs: measured on the longest possible account id, with its fresh-shares record
+        let probe = "a".repeat(64);
+        let before = env::storage_usage();
+        c.accounts.insert(probe.clone(), Account::fresh(0));
+        c.accounts.flush();
+        store(&fresh_key(&probe), &FreshShares { epoch_id: 1, today: 1, yesterday: 1 });
+        c.account_bytes = env::storage_usage() - before;
+        env::storage_remove(&fresh_key(&probe));
+        c.accounts.remove(&probe);
+        c.commit();
+        c
     }
 
     /// The bank's ceiling is a side record, not part of the stored bank: put it into the core before any call that
@@ -421,23 +532,49 @@ impl Contract {
         &mut self.bank
     }
 
-    /// Log what the core did in this call: the contract's own events, then the NEP-141 view of the same movements.
-    /// The number of logs does not grow with the number of accounts: a collapse settles every depositor and pays
-    /// every insured account, and those go out as totals in the `collapse` event plus at most `MAX_EVENT_ENTRIES`
-    /// entries in one `ft_transfer` and one `ft_mint` event (registration order; the rest only shows in balances).
+    /// Put `ids` (those that are registered) and the collapse records they still need into the bank's working set.
+    fn load(&mut self, ids: &[&str]) {
+        for id in ids {
+            if self.bank.accounts.contains_key(*id) { continue; }
+            let Some(a) = self.accounts.get(*id) else { continue };
+            let a = a.clone();
+            if a.era < self.bank.era && !self.bank.records.contains_key(&a.era) {
+                let r = self.records.get(&a.era).unwrap_or_else(|| env::panic_str("collapse record missing")).clone();
+                self.bank.records.insert(a.era, r);
+            }
+            self.bank.accounts.insert(id.to_string(), a);
+        }
+    }
+
+    /// Write the working set back: every account in it, and the records a collapse added. Clears the working set.
+    fn commit(&mut self) {
+        for (id, a) in std::mem::take(&mut self.bank.accounts) { self.accounts.insert(id, a); }
+        for (era, r) in std::mem::take(&mut self.bank.records) {
+            if !self.records.contains_key(&era) { self.records.insert(era, r); }
+        }
+    }
+
+    fn registered(&self, id: &str) -> bool {
+        self.bank.accounts.contains_key(id) || self.accounts.contains_key(id)
+    }
+
+    /// What a past collapse owes `a` (vault share + insurance), read from the stored records.
+    fn owed(&self, a: &Account) -> u128 {
+        if a.era >= self.bank.era { return 0; }
+        let Some(r) = self.records.get(&a.era) else { return 0 };
+        let share = if a.shares == 0 || r.total_shares == 0 { 0 } else { r.assets * a.shares / r.total_shares };
+        let ins = if a.insured == 0 || a.insured_round != r.round as i64 || r.ins_owed == 0 { 0 } else { a.insured * bank_core::INSURE_PAYOUT * r.ins_paid / r.ins_owed };
+        share + ins
+    }
+
+    /// Log what the core did in this call (the contract's own events, then the NEP-141 view of the same movements),
+    /// update the supply log and stats, and write the touched accounts back.
     fn flush(&mut self) {
         let events = std::mem::take(&mut self.bank.events);
         let bank = env::current_account_id().to_string();
-        let (mut settled, mut settled_total, mut insured, mut insurance_total) = (0u32, 0u128, 0u32, 0u128);
-        for e in &events {
-            match e {
-                Event::Settle { amount, .. } => { settled += 1; settled_total += amount; }
-                Event::InsurancePayout { amount, .. } => { insured += 1; insurance_total += amount; }
-                _ => {}
-            }
-        }
         let mut t = Ledger::default();
         let mut round_ends: Vec<bool> = vec![];
+        let mut settled: Vec<Value> = vec![];
         for e in &events {
             if let Event::RoundEnd { survived, .. } = e { round_ends.push(*survived); }
             match e {
@@ -448,9 +585,18 @@ impl Contract {
                     t.burn(&bank, *burned, "fire sale haircut");
                     t.transfer(&bank, who, *amount, "withdraw");
                 }
-                Event::Collapse { burned, .. } => t.burn(&bank, *burned, "collapse haircut"),
-                Event::Settle { who, amount } => t.transfer(&bank, who, *amount, "collapse settlement"),
-                Event::InsurancePayout { who, amount } => t.mint(who, *amount, "insurance payout"),
+                Event::Collapse { burned, insurance, .. } => {
+                    t.burn(&bank, *burned, "collapse haircut");
+                    t.mint(&bank, *insurance, "insurance payout");
+                }
+                Event::Settle { who, amount } => {
+                    t.transfer(&bank, who, *amount, "collapse settlement");
+                    settled.push(json!({"account_id": who, "amount": u(*amount), "kind": "share"}));
+                }
+                Event::InsurancePayout { who, amount } => {
+                    t.transfer(&bank, who, *amount, "insurance payout");
+                    settled.push(json!({"account_id": who, "amount": u(*amount), "kind": "insurance"}));
+                }
                 Event::Policy { policy } => t.mint(&bank, policy.mint, "policy mint"),
                 Event::Lobby { who, .. } => t.burn(who, LOBBY_FEE, "lobby fee"),
                 Event::Rumor { who, .. } => t.burn(who, RUMOR_FEE, "rumour fee"),
@@ -460,22 +606,14 @@ impl Contract {
                 Event::Epoch { .. } | Event::RoundEnd { .. } => {}
             }
             let Some(mut v) = event_json(e) else { continue };
-            if matches!(e, Event::Collapse { .. }) {
-                let d = &mut v["data"][0];
-                d["settled_accounts"] = json!(settled);
-                d["settled_total"] = json!(u(settled_total));
-                d["insured_accounts"] = json!(insured);
-                d["insurance_total"] = json!(u(insurance_total));
-                // entries left out of the batched nep141 events of this call (0 = they are complete)
-                d["nep141_transfers_omitted"] = json!(t_omitted(events.iter().filter(|e| matches!(e, Event::Settle { amount, .. } if *amount > 0)).count()));
-                d["nep141_mints_omitted"] = json!(t_omitted(insured as usize));
-            }
             v["standard"] = json!("lemon-bank");
             v["version"] = json!("1.0.0");
             env::log_str(&format!("EVENT_JSON:{}", v));
         }
+        for batch in settled.chunks(MAX_EVENT_ENTRIES) { log_event("lemon-bank", "settle", json!(batch)); }
         t.log();
         self.record(&t, &round_ends);
+        self.commit();
     }
 
     /// Side records of one call: the supply log (one record per kind, the call's total with its memos) and the
@@ -508,28 +646,34 @@ impl Contract {
         store(KEY_SUPPLY_COUNT, &n);
     }
 
-    fn require_room_for_a_new_account(&self) {
-        require!(self.bank.order.len() < MAX_ACCOUNTS, format!("the bank is full: it holds at most {MAX_ACCOUNTS} accounts"));
-    }
-
-    /// A withdrawal, then the early-withdrawal fee if the account's latest deposit was made in the bank day just
-    /// before this one (only then did one `advance_epoch` add interest to money that had not stayed a full day).
-    /// A withdrawal that breaks the bank (a collapse) pays nothing out to the caller directly, so it pays no fee.
+    /// A withdrawal, then the early-withdrawal fee on the part of it that was deposited in the bank day before this
+    /// one (`FreshShares`: today's shares leave first, then yesterday's, then older ones). A withdrawal that breaks
+    /// the bank (a collapse) pays nothing out to the caller directly and burns no shares, so it pays no fee.
     fn withdraw_with_fee(&mut self, amount: Option<u128>) {
         let who = Self::caller();
-        let fresh = load::<u64>(&deposit_epoch_key(&who)).is_some_and(|e| e + 1 == self.bank.epoch_id);
+        self.load(&[&who]);
+        let shares_of = |b: &Bank| b.accounts.get(&who).map(|a| a.shares).unwrap_or(0);
+        let before = shares_of(&self.bank);
         let rate = load::<u128>(KEY_LAST_RATE).unwrap_or(0);
         ok(match amount { Some(a) => self.ceiling().withdraw(&who, a), None => self.ceiling().withdraw_all(&who) });
         let paid = self.bank.events.iter().find_map(|e| match e { Event::Withdraw { who: w, amount, .. } if *w == who => Some(*amount), _ => None }).unwrap_or(0);
-        let fee = if fresh { early_withdrawal_fee(paid, rate) } else { 0 };
-        self.flush();
+        let burned = before.saturating_sub(shares_of(&self.bank));
+        let mut fresh = fresh_of(&who, self.bank.epoch_id);
+        let from_yesterday = fresh.take(burned);
+        keep_fresh(&who, fresh);
+        // the LEMON paid out for yesterday's shares (shares are burned pro rata to what is paid)
+        let fee_base = (paid * from_yesterday).checked_div(burned).unwrap_or(0);
+        let fee = early_withdrawal_fee(fee_base, rate);
         if fee > 0 {
             let a = self.bank.accounts.get_mut(&who).unwrap_or_else(|| env::panic_str("withdrawing account vanished"));
             a.wallet -= fee;
             self.bank.supply -= fee;
+        }
+        self.flush();
+        if fee > 0 {
             let mut t = Ledger::default();
             t.burn(&who, fee, "early withdrawal fee");
-            log_event("lemon-bank", "early_withdrawal_fee", json!([{"account_id": who, "withdrawn": u(paid), "fee": u(fee), "rate_bps": u(rate)}]));
+            log_event("lemon-bank", "early_withdrawal_fee", json!([{"account_id": who, "withdrawn": u(paid), "fresh": u(fee_base), "fee": u(fee), "rate_bps": u(rate)}]));
             t.log();
             self.record(&t, &[]);
         }
@@ -543,7 +687,10 @@ impl Contract {
 
     /// Move LEMON between two registered accounts and log the NEP-141 `ft_transfer` event.
     fn transfer(&mut self, from: &str, to: &str, amount: u128, memo: Option<String>) {
+        self.load(&[from, to]);
         ok(self.bank.transfer(from, to, amount));
+        // a transfer may first pay either side what a past collapse owed it
+        self.flush();
         let mut entry = json!({"old_owner_id": from, "new_owner_id": to, "amount": u(amount)});
         if let Some(m) = memo { entry["memo"] = json!(m); }
         log_nep141("ft_transfer", &[entry]);
@@ -582,51 +729,97 @@ impl Contract {
             Ok(v) => near_sdk::serde_json::from_slice::<U128>(&v).map(|x| x.0.min(amount.0)).unwrap_or(amount.0),
             Err(_) => amount.0,
         };
-        let held = self.bank.accounts.get(receiver_id.as_str()).map(|a| a.wallet).unwrap_or(0);
+        let held = self.accounts.get(receiver_id.as_str()).map(|a| a.wallet + self.owed(a)).unwrap_or(0);
         let refund = unused.min(held);
-        if refund > 0 {
+        if refund > 0 && self.registered(sender_id.as_str()) {
             self.transfer(receiver_id.as_str(), sender_id.as_str(), refund, Some("refund".into()));
         }
         U128(amount.0 - refund)
     }
 
-    // ---------------------------------------------------------------- NEP-145 (storage), minimal
+    // ---------------------------------------------------------------- NEP-145 (storage)
     //
     // Every account costs the same, so there is one price and nothing to top up: `storage_balance_bounds` has
-    // min == max and `available` is always 0. Accounts that exist already (genesis, airdrop, or anything from before
-    // this build) count as registered and owe nothing. `storage_withdraw` and `storage_unregister` are not
-    // implemented: an account, once created, stays (its registration order matters to the bank).
+    // min == max and `available` is always 0. The price is the bytes one account record takes, measured when the
+    // bank was created. There is no limit on the number of accounts: each one pays for itself.
 
-    fn storage_price() -> NearToken {
-        env::storage_byte_cost().saturating_mul(ACCOUNT_STORAGE_BYTES)
+    fn storage_price(&self) -> NearToken {
+        env::storage_byte_cost().saturating_mul(self.account_bytes as u128)
     }
 
     fn storage_balance(&self, account_id: &str) -> Option<Value> {
-        self.bank.is_registered(account_id).then(|| json!({"total": Self::storage_price(), "available": "0"}))
+        self.registered(account_id).then(|| json!({"total": self.storage_price(), "available": "0"}))
     }
 
-    /// Register `account_id` (default: the caller) so it can receive LEMON. Costs `storage_balance_bounds().min`;
-    /// anything attached above it, or everything if the account exists already, is refunded to the caller.
-    /// `registration_only` is accepted and has no effect: there is never more than the minimum to keep.
-    #[payable]
-    pub fn storage_deposit(&mut self, account_id: Option<AccountId>, registration_only: Option<bool>) -> Value {
-        let _ = registration_only;
+    /// Register `who` if it is new, paid from the attached deposit; refund the rest (everything, if it existed).
+    fn register_paid(&mut self, who: &str) {
         let paid = env::attached_deposit();
-        let who = account_id.unwrap_or_else(env::predecessor_account_id);
-        let price = Self::storage_price();
-        let refund = if self.bank.is_registered(who.as_str()) {
+        let price = self.storage_price();
+        let refund = if self.registered(who) {
             paid
         } else {
-            require!(paid >= price, format!("registering an account takes {} yoctoNEAR of storage deposit", price.as_yoctonear()));
-            self.require_room_for_a_new_account();
-            self.bank.register(who.as_str());
+            require!(paid >= price, format!("registering an account takes {} yoctoNEAR of storage deposit (storage_balance_bounds)", price.as_yoctonear()));
+            self.accounts.insert(who.to_string(), Account::fresh(self.bank.era));
             log_event("lemon-bank", "register", json!([{"account_id": who}]));
             paid.saturating_sub(price)
         };
         if !refund.is_zero() {
             Promise::new(env::predecessor_account_id()).transfer(refund).detach();
         }
+    }
+
+    /// Register `account_id` (default: the caller) so it can hold LEMON. Costs `storage_balance_bounds().min`;
+    /// anything attached above it, or everything if the account exists already, is refunded to the caller.
+    /// `registration_only` is accepted and has no effect: there is never more than the minimum to keep.
+    #[payable]
+    pub fn storage_deposit(&mut self, account_id: Option<AccountId>, registration_only: Option<bool>) -> Value {
+        let _ = registration_only;
+        let who = account_id.unwrap_or_else(env::predecessor_account_id);
+        self.register_paid(who.as_str());
         self.storage_balance(who.as_str()).unwrap_or(Value::Null)
+    }
+
+    /// NEP-145: nothing is ever available above the minimum, so only `amount` 0 (or none) is accepted.
+    #[payable]
+    pub fn storage_withdraw(&mut self, amount: Option<NearToken>) -> Value {
+        require!(env::attached_deposit() == NearToken::from_yoctonear(1), "requires attached deposit of exactly 1 yoctoNEAR");
+        let who = env::predecessor_account_id();
+        require!(self.registered(who.as_str()), "the account is not registered");
+        require!(amount.is_none_or(|a| a.is_zero()), "nothing is available to withdraw: the whole deposit pays for the account");
+        self.storage_balance(who.as_str()).unwrap_or(Value::Null)
+    }
+
+    /// NEP-145: close the caller's account and get its storage deposit back. Whatever a past collapse owed it is paid
+    /// first. Refused while the account has money in the bank or insurance this round; refused while its wallet holds
+    /// LEMON unless `force`, which burns that LEMON. Returns false for an account that was not registered.
+    #[payable]
+    pub fn storage_unregister(&mut self, force: Option<bool>) -> bool {
+        require!(env::attached_deposit() == NearToken::from_yoctonear(1), "requires attached deposit of exactly 1 yoctoNEAR");
+        let who = Self::caller();
+        if !self.registered(&who) { return false; }
+        self.load(&[&who]);
+        self.bank.settle(&who);
+        let round = self.bank.round as i64;
+        let a = self.bank.accounts.get(&who).cloned().unwrap_or_else(|| env::panic_str("account vanished"));
+        require!(a.shares == 0, "take your deposit out of the bank first");
+        require!(a.insured_round != round || a.insured == 0, "your insurance runs until the end of this round");
+        if a.wallet > 0 {
+            require!(force.unwrap_or(false), "the wallet still holds LEMON: transfer it, or pass force=true to burn it");
+            self.bank.supply -= a.wallet;
+            let mut t = Ledger::default();
+            t.burn(&who, a.wallet, "account closed");
+            self.bank.accounts.get_mut(&who).unwrap().wallet = 0;
+            self.flush();
+            t.log();
+            self.record(&t, &[]);
+        } else {
+            self.flush();
+        }
+        self.accounts.remove(&who);
+        env::storage_remove(&fresh_key(&who));
+        log_event("lemon-bank", "unregister", json!([{"account_id": who}]));
+        Promise::new(env::predecessor_account_id()).transfer(self.storage_price()).detach();
+        true
     }
 
     pub fn storage_balance_of(&self, account_id: AccountId) -> Option<Value> {
@@ -634,18 +827,19 @@ impl Contract {
     }
 
     pub fn storage_balance_bounds(&self) -> Value {
-        json!({"min": Self::storage_price(), "max": Self::storage_price()})
+        json!({"min": self.storage_price(), "max": self.storage_price()})
     }
 
     pub fn ft_total_supply(&self) -> U128 {
         U128(self.bank.supply)
     }
 
-    /// An account's wallet. For the contract account: plus the bank's reserve and loans, so that all balances add
-    /// up to `ft_total_supply` (deposits are LEMON the bank holds, not the depositor).
+    /// An account's wallet. For the contract account: plus the bank's reserve, loans and what past collapses still owe
+    /// depositors, so that all balances add up to `ft_total_supply` (deposits are LEMON the bank holds). What a
+    /// collapse owes an account moves into its wallet on its next touch (`get_account` shows it as `owed`).
     pub fn ft_balance_of(&self, account_id: AccountId) -> U128 {
-        let wallet = self.bank.accounts.get(account_id.as_str()).map(|a| a.wallet).unwrap_or(0);
-        U128(if account_id == env::current_account_id() { wallet + self.bank.reserve + self.bank.loans } else { wallet })
+        let wallet = self.accounts.get(account_id.as_str()).map(|a| a.wallet).unwrap_or(0);
+        U128(if account_id == env::current_account_id() { wallet + self.bank.reserve + self.bank.loans + self.bank.unsettled } else { wallet })
     }
 
     pub fn ft_metadata(&self) -> Value {
@@ -655,23 +849,30 @@ impl Contract {
 
     // ---------------------------------------------------------------- players and agents
 
-    /// The testnet faucet: 1,000 LEMON, once per account. It is the one call that creates an account without a
-    /// storage deposit (the keeper and the agents call it without attaching NEAR, and that keeps working). The cost
-    /// to the contract is bounded per NEAR account, but NEAR accounts are cheap: this is the stated weak-sybil
-    /// faucet of a testnet game, and a mainnet version would charge `storage_deposit` here too.
+    /// The testnet faucet: 1,000 LEMON, once per account, at most `AIRDROPS_PER_EPOCH` a bank day, and never into the
+    /// last tenth of the ceiling (bank-core). A new account pays for its storage here (attach
+    /// `storage_balance_bounds().min`, the rest is refunded); a registered one attaches nothing.
+    #[payable]
     pub fn airdrop(&mut self) {
-        if !self.bank.is_registered(&Self::caller()) { self.require_room_for_a_new_account(); }
-        ok(self.ceiling().airdrop(&Self::caller()));
+        let who = Self::caller();
+        self.register_paid(&who);
+        self.load(&[&who]);
+        ok(self.ceiling().airdrop(&who));
         self.flush();
     }
     pub fn deposit(&mut self, amount: U128) {
         let who = Self::caller();
+        self.load(&[&who]);
+        // the shares this deposit buys, as the core computes them (the index does not move within a call)
+        let bought = amount.0 * bank_core::SCALE / self.bank.index;
         ok(self.bank.deposit(&who, amount.0));
-        store(&deposit_epoch_key(&who), &self.bank.epoch_id);
+        let mut fresh = fresh_of(&who, self.bank.epoch_id);
+        fresh.today += bought;
+        keep_fresh(&who, fresh);
         self.flush();
     }
-    /// Take `amount` of your deposit out. In the first bank day after your latest deposit this pays the
-    /// early-withdrawal fee (`early_withdrawal_fee`), which burns.
+    /// Take `amount` of your deposit out. The part of it deposited in the bank day before this one pays the
+    /// early-withdrawal fee (`early_withdrawal_fee`, `FreshShares`), which burns.
     pub fn withdraw(&mut self, amount: U128) {
         self.withdraw_with_fee(Some(amount.0));
     }
@@ -679,16 +880,36 @@ impl Contract {
         self.withdraw_with_fee(None);
     }
     pub fn lobby(&mut self, text: String) {
-        ok(self.bank.lobby(&Self::caller(), &text));
+        require!(question_for(self.bank.epoch_id).is_none(), "the chair has already read the room this bank day: speak after the next one opens");
+        let who = Self::caller();
+        self.load(&[&who]);
+        ok(self.bank.lobby(&who, &text));
         self.flush();
     }
     pub fn rumor(&mut self, kind: String) {
-        ok(self.bank.rumor(&Self::caller(), &kind));
+        require!(question_for(self.bank.epoch_id).is_none(), "the chair has already read the room this bank day: spread it after the next one opens");
+        let who = Self::caller();
+        self.load(&[&who]);
+        ok(self.bank.rumor(&who, &kind));
         self.flush();
     }
     pub fn insure(&mut self, premium: U128) {
-        ok(self.bank.insure(&Self::caller(), premium.0));
+        let who = Self::caller();
+        self.load(&[&who]);
+        ok(self.bank.insure(&who, premium.0));
         self.flush();
+    }
+
+    /// Anyone: pay these accounts what past collapses owe them (at most `MAX_SETTLE_BATCH` per call). Accounts that
+    /// are up to date or not registered are skipped. Returns how many were paid.
+    pub fn settle(&mut self, account_ids: Vec<AccountId>) -> u32 {
+        require!(account_ids.len() <= MAX_SETTLE_BATCH, format!("at most {MAX_SETTLE_BATCH} accounts per call"));
+        let ids: Vec<String> = account_ids.iter().map(|a| a.to_string()).collect();
+        let refs: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
+        self.load(&refs);
+        let n = ids.iter().filter(|id| self.bank.settle(id)).count() as u32;
+        self.flush();
+        n
     }
 
     // ---------------------------------------------------------------- chair and DAO
@@ -699,6 +920,58 @@ impl Contract {
         let p = Policy { rate: rate as u128, target: target as u128, mint: mint.0, gate: gate.0, tone, statement, attestation };
         ok(self.ceiling().set_policy(&Self::caller(), p));
         self.flush();
+    }
+
+    /// Chair only, once per bank day, before asking the model: freeze the question. The contract writes down its own
+    /// numbers as they are now (supply, reserve, loans, liabilities, reserve ratio, the closed day's outflow and
+    /// write-off, what the chair may print, the chair's credibility) and how many speeches and rumours have been made,
+    /// together with the town's mood as the chair states it (0..1000: the share of the town's simulated depositors
+    /// past half their panic threshold; the town lives off chain, so this one figure is the chair's word, on chain
+    /// before the model answers). `get_question` returns the observation to send; `set_policy_attested` accepts only
+    /// an answer to exactly it. From now until the next bank day, new speeches and rumours are refused: the chair has
+    /// read the room.
+    pub fn open_question(&mut self, mood_permille: u32) {
+        require!(Self::caller() == self.bank.chair, "only the chair opens the day's question");
+        require!(!self.bank.collapsed, "bank is closed until the bailout");
+        require!(self.bank.policy_set_epoch_id != self.bank.epoch_id as i64, "policy already set this epoch");
+        require!(question_for(self.bank.epoch_id).is_none(), "the question of this bank day is already open");
+        require!(mood_permille <= 1000, "mood is permille: 0..1000");
+        let credibility = load::<Credibility>(KEY_CREDIBILITY).unwrap_or_default().value;
+        let day: ClosedDay = load(KEY_CLOSED_DAY).unwrap_or_default();
+        let b = &*self.ceiling();
+        let q = Question {
+            epoch_id: b.epoch_id, supply: b.supply, reserve: b.reserve, loans: b.loans, liabilities: b.liabilities(),
+            reserve_permille: b.reserve_ratio(), outflow_permille: day.outflow_permille, writedown_permille: day.writedown_permille,
+            mint_room: b.mint_allowance(), mood_permille, credibility,
+            speeches: b.speeches.len() as u32, rumors: b.rumors.len() as u32, at_ms: env::block_timestamp_ms(),
+        };
+        store(KEY_QUESTION, &q);
+        log_event("lemon-bank", "question", json!([self.observation(&q)]));
+    }
+
+    /// The observation of a frozen question, exactly as the model must read it (`check_request` compares field by
+    /// field): the frozen numbers, the current round, epoch and policy, and the speeches and rumours made before it.
+    fn observation(&self, q: &Question) -> Value {
+        let b = &self.bank;
+        json!({
+            "credibility": q.credibility, "epoch": b.epoch, "epochId": q.epoch_id, "epochsPerRound": bank_core::EPOCHS_PER_ROUND,
+            "liabilities": q.liabilities as u64, "loans": q.loans as u64, "mintRoom": q.mint_room as u64, "moodPermille": q.mood_permille,
+            "outflowPermille": q.outflow_permille as u64,
+            "policy": {"gate": b.policy.gate as u64, "rate": b.policy.rate as u64, "target": b.policy.target as u64},
+            "reserve": q.reserve as u64, "reservePermille": q.reserve_permille as u64, "round": b.round,
+            "rumors": b.rumors.iter().take(q.rumors as usize).map(|n| n.text.clone()).collect::<Vec<_>>(),
+            "speeches": b.speeches.iter().take(q.speeches as usize).map(|n| json!({"text": n.text, "who": n.who})).collect::<Vec<_>>(),
+            "supply": q.supply as u64, "writedownPermille": q.writedown_permille as u64,
+        })
+    }
+
+    /// This bank day's frozen question: `{ epoch_id, at_ms, observation }`, or null if the chair has not opened one.
+    /// `observation` is what the keeper sends the model as the user message (canonical JSON of this object).
+    pub fn get_question(&self) -> Value {
+        match question_for(self.bank.epoch_id) {
+            None => Value::Null,
+            Some(q) => json!({"epoch_id": q.epoch_id, "at_ms": q.at_ms, "observation": self.observation(&q)}),
+        }
     }
 
     /// Chair only. `request` and `response` are the exact NEAR AI chat-completion request and response bodies,
@@ -732,16 +1005,15 @@ impl Contract {
     /// - canonical JSON (what `serde_json` writes back: no whitespace, no duplicate keys), so what is checked is
     ///   exactly what the model read;
     /// - only the fields the keeper sends, with the decoding settings pinned (`json_object`, thinking off,
-    ///   temperature 0..1, at most 1024 output tokens): no `tools`, `logit_bias` or JSON schema can steer the answer;
+    ///   temperature 0, at most 1024 output tokens): no `tools`, `logit_bias` or JSON schema can steer the answer;
     /// - the pinned model, one system message with the DAO-pinned prompt, one user message with the observation;
-    /// - the observation: only the known fields, the current epoch, round and policy, and speeches and rumours that
-    ///   are a prefix of the ones on chain (players may speak after the chair has read the room, but nobody can put
-    ///   words in their mouths).
+    /// - the observation: only the known fields, the current epoch, round and policy, every number equal to the
+    ///   question the chair froze this bank day (`open_question`), and exactly the speeches and rumours made before it,
+    ///   word for word: none invented, none left out.
     ///
-    /// Not checked: the other numbers of the observation (supply, reserve, loans, liabilities, the permille figures,
-    /// mint room, mood, credibility) only have to be whole numbers. They are a snapshot (players move money at any
-    /// time) or off-chain figures, and the contract compares none of them with its state: a relayer can misstate
-    /// them. Whatever the model then answers still meets the bounds in `bank-core`.
+    /// One number is the chair's own statement, frozen on chain before the model answers but not computable by the
+    /// contract: the town's mood (the town is simulated off chain). Whatever the model then answers still meets the
+    /// bounds in `bank-core`.
     fn check_request(&self, request: &str) -> Result<(), String> {
         let r: Value = near_sdk::serde_json::from_str(request).map_err(|_| "request is not JSON".to_string())?;
         if canonical(&r) != request { return Err("request is not canonical JSON (whitespace, key order or duplicate keys)".into()); }
@@ -753,7 +1025,8 @@ impl Contract {
         }
         if r["response_format"] != json!({"type": "json_object"}) { return Err("response_format must be {\"type\":\"json_object\"}".into()); }
         if r["chat_template_kwargs"] != json!({"enable_thinking": false}) { return Err("chat_template_kwargs must be {\"enable_thinking\":false}".into()); }
-        if !r["temperature"].as_f64().is_some_and(|t| (0.0..=1.0).contains(&t)) { return Err("temperature must be between 0 and 1".into()); }
+        // temperature 0: the model's most likely answer, so asking it again cannot shop for a better one
+        if r["temperature"].as_f64() != Some(0.0) { return Err("temperature must be 0".into()); }
         if !r["max_tokens"].as_u64().is_some_and(|t| (1..=1024).contains(&t)) { return Err("max_tokens must be 1..1024".into()); }
         let msgs = r["messages"].as_array().ok_or("request has no messages")?;
         if msgs.len() != 2 || !msgs.iter().all(|m| keys_are(m, &["content", "role"])) || msgs[0]["role"] != "system" || msgs[1]["role"] != "user" {
@@ -776,6 +1049,7 @@ impl Contract {
             return Err(format!("question is for epoch {}, the bank is in epoch {}: an old question cannot be replayed", obs["epochId"], self.bank.epoch_id));
         }
         let b = &self.bank;
+        let q = question_for(b.epoch_id).ok_or("no question frozen for this bank day: the chair calls open_question before asking the model")?;
         if obs["round"].as_u64() != Some(b.round as u64) || obs["epoch"].as_u64() != Some(b.epoch as u64) || obs["epochsPerRound"].as_u64() != Some(bank_core::EPOCHS_PER_ROUND as u64) {
             return Err("question names the wrong round or epoch".into());
         }
@@ -785,25 +1059,36 @@ impl Contract {
             return Err("question misstates the current policy".into());
         }
         let speeches = obs["speeches"].as_array().ok_or("observation has no speeches list")?;
-        if speeches.len() > b.speeches.len() { return Err("question quotes speeches that are not on chain".into()); }
+        if speeches.len() > q.speeches as usize { return Err("question quotes speeches that are not on chain".into()); }
+        if speeches.len() < q.speeches as usize { return Err(format!("question leaves out speeches: {} were made before it was frozen, it quotes {}", q.speeches, speeches.len())); }
         for (q, n) in speeches.iter().zip(&b.speeches) {
             if !keys_are(q, &["text", "who"]) || q["who"].as_str() != Some(n.who.as_str()) || q["text"].as_str() != Some(n.text.as_str()) {
                 return Err(format!("question misquotes a speech by {}", n.who));
             }
         }
         let rumors = obs["rumors"].as_array().ok_or("observation has no rumors list")?;
-        if rumors.len() > b.rumors.len() { return Err("question quotes rumours that are not on chain".into()); }
+        if rumors.len() > q.rumors as usize { return Err("question quotes rumours that are not on chain".into()); }
+        if rumors.len() < q.rumors as usize { return Err(format!("question leaves out rumours: {} were spread before it was frozen, it quotes {}", q.rumors, rumors.len())); }
         for (q, n) in rumors.iter().zip(&b.rumors) {
             if q.as_str() != Some(n.text.as_str()) { return Err("question misquotes a rumour".into()); }
+        }
+        let frozen = [("supply", q.supply), ("reserve", q.reserve), ("loans", q.loans), ("liabilities", q.liabilities),
+            ("reservePermille", q.reserve_permille), ("outflowPermille", q.outflow_permille), ("writedownPermille", q.writedown_permille),
+            ("mintRoom", q.mint_room), ("moodPermille", q.mood_permille as u128), ("credibility", q.credibility as u128)];
+        if let Some((k, v)) = frozen.iter().find(|(k, v)| obs[*k].as_u64().map(u128::from) != Some(*v)) {
+            return Err(format!("question misstates {k}: the bank froze {v} for this bank day, the model was told {}", obs[*k]));
         }
         Ok(())
     }
 
     /// Owner (the holders' DAO) only: pin the chair model's TEE signing key (after checking NEAR AI's attestation
-    /// report off chain), the model id, and the sha256 (hex) of the chair's system prompt. `signer: None` switches
-    /// back to unattested mode. After an impeachment the DAO pins the new chair's prompt here.
+    /// report off chain), the model id, and the sha256 (hex) of the chair's system prompt. Before the first pin the bank
+    /// is in unattested mode; once a key is pinned, `signer: None` is refused: the owner can pin another key, model or
+    /// prompt (after an impeachment it pins the new chair's prompt here), never switch signed policies off.
     pub fn set_chair_signer(&mut self, signer: Option<String>, model: String, prompt_sha256: Option<String>) {
         require!(Self::caller() == self.bank.owner, "only the owner (the holders' DAO) can pin the chair's signing key");
+        // one way: a bank that accepts only signed policies never goes back to unsigned ones
+        require!(signer.is_some() || self.chair_signer.is_none(), "this bank accepts only signed policies for good: the owner can pin another key, model or prompt, not remove the requirement");
         if signer.is_some() {
             require!(signer.as_deref().map(unhex).map(|k| k.len()) == Some(32), "signer must be a 32-byte ed25519 key in hex");
             require!(!model.is_empty(), "a pinned signer needs the model id it signs for");
@@ -833,6 +1118,8 @@ impl Contract {
     /// Owner (the holders' DAO) only: impeach the chair by naming a new chair account.
     pub fn set_chair(&mut self, chair_id: AccountId) {
         ok(self.bank.set_chair(&Self::caller(), chair_id.as_str()));
+        // a new chair starts with the town's full credit
+        store(KEY_CREDIBILITY, &Credibility { value: CREDIBILITY_START, ..load(KEY_CREDIBILITY).unwrap_or_default() });
         log_event("lemon-bank", "set_chair", json!([{"chair_id": chair_id}]));
     }
 
@@ -845,20 +1132,21 @@ impl Contract {
         let shock = if self.bank.collapsed { 0 } else { bank_core::shock_from_seed(&env::random_seed()) };
         // the interest this advance adds to every deposit (none on the day of a bailout); read by the early-withdrawal fee
         let rate = if self.bank.collapsed { 0 } else { self.bank.policy.rate };
+        // the closing day's withdrawals, before the core resets them; read by the next question
+        let outflow_permille = outflow_permille(self.bank.outflow, self.bank.liabilities());
+        // the chair's credibility: what it said that day (if it spoke) against what the town then did
+        let b = &self.bank;
+        let calm_words = b.policy_set_epoch_id == b.epoch_id as i64 && matches!(b.policy.tone.as_str(), "calm" | "confident");
+        let mut cred: Credibility = load(KEY_CREDIBILITY).unwrap_or_default();
+        cred.close_day(calm_words, outflow_permille);
+        if b.collapsed { cred.bailout(); }
+        store(KEY_CREDIBILITY, &cred);
         self.ceiling().advance_epoch(shock);
+        let writedown_permille = self.bank.events.iter().find_map(|e| match e { Event::Writedown { permille, .. } => Some(*permille), _ => None }).unwrap_or(0);
         self.last_epoch_ms = now;
         store(KEY_LAST_RATE, &rate);
+        store(KEY_CLOSED_DAY, &ClosedDay { outflow_permille, writedown_permille });
         self.flush();
-    }
-
-    /// The length of a bank day, set by the contract account itself (batched with a code upgrade). The deployed bank
-    /// was created with 30-second days while its keeper moves it once an hour; a day shorter than the schedule lets
-    /// anyone move the bank on faster than the chair speaks.
-    #[private]
-    pub fn set_epoch_seconds(&mut self, epoch_seconds: u64) {
-        require!((5..=MAX_EPOCH_SECONDS).contains(&epoch_seconds), "epoch must be between 5 seconds and a day (86400 seconds)");
-        self.epoch_ms = epoch_seconds * 1000;
-        log_event("lemon-bank", "epoch_length", json!([{"epoch_seconds": epoch_seconds}]));
     }
 
     // ---------------------------------------------------------------- views
@@ -878,25 +1166,44 @@ impl Contract {
             "rumors": b.rumors.iter().map(|s| json!({"who": s.who, "kind": s.text})).collect::<Vec<_>>(),
             "epoch_ms": self.epoch_ms, "next_epoch_ms": self.last_epoch_ms + self.epoch_ms,
             "chair_signer": self.chair_signer, "chair_model": self.chair_model, "chair_prompt_sha256": self.chair_prompt,
-            "accounts": b.order.len(),
-            // the most LEMON that may ever exist; null on a bank whose ceiling has not been set
+            "accounts": self.accounts.len(),
+            // the most LEMON that may ever exist
             "max_supply": load::<u128>(KEY_MAX_SUPPLY).map(u),
-            "max_accounts": MAX_ACCOUNTS,
+            // collapses so far, and what they still owe accounts that have not been touched since
+            "collapses": b.era, "unsettled": u(b.unsettled),
+            "insured_total": u(b.insured_total),
+            "airdrops_this_epoch": b.airdrops_this_epoch, "airdrops_per_epoch": bank_core::AIRDROPS_PER_EPOCH,
+            "storage_price": self.storage_price(),
             // the interest (bps) the latest new bank day added; the early-withdrawal fee charges this rate
             "last_rate_bps": u(load::<u128>(KEY_LAST_RATE).unwrap_or(0)),
+            // the chair has frozen this bank day's question: speeches and rumours wait for the next day
+            "question_open": question_for(b.epoch_id).is_some(),
+            // how far the town believes the chair (0..1000), by the rule of `Credibility`
+            "credibility": load::<Credibility>(KEY_CREDIBILITY).unwrap_or_default().value,
         })
     }
 
     pub fn get_account(&self, account_id: AccountId) -> Value {
         let b = &self.bank;
-        match b.accounts.get(account_id.as_str()) {
+        match self.accounts.get(account_id.as_str()) {
             None => Value::Null,
-            Some(a) => json!({
-                "wallet": u(a.wallet), "shares": u(a.shares), "deposit_value": u(b.value_of(account_id.as_str())),
-                "insured": u(if a.insured_round == b.round as i64 { a.insured } else { 0 }), "airdropped": a.airdropped,
-                // true when taking money out now would pay the early-withdrawal fee
-                "early_fee_now": load::<u64>(&deposit_epoch_key(account_id.as_str())).is_some_and(|e| e + 1 == b.epoch_id),
-            }),
+            Some(a) => {
+                let current = a.era >= b.era;
+                let fresh = fresh_of(account_id.as_str(), b.epoch_id);
+                json!({
+                    "wallet": u(a.wallet),
+                    // LEMON a past collapse owes this account; it moves into the wallet on the account's next call
+                    "owed": u(self.owed(a)),
+                    "shares": u(if current { a.shares } else { 0 }),
+                    "deposit_value": u(if current { a.shares * b.index / bank_core::SCALE } else { 0 }),
+                    "insured": u(if current && a.insured_round == b.round as i64 { a.insured } else { 0 }), "airdropped": a.airdropped,
+                    // the early-withdrawal fee: `fee_free_now` LEMON can come out first without it (deposited today),
+                    // the next `early_fee_on` LEMON (deposited yesterday) pay it, the rest is free again
+                    "early_fee_now": current && fresh.yesterday > 0,
+                    "early_fee_on": u(if current { fresh.yesterday * b.index / bank_core::SCALE } else { 0 }),
+                    "fee_free_now": u(if current { fresh.today * b.index / bank_core::SCALE } else { 0 }),
+                })
+            }
         }
     }
 
@@ -910,31 +1217,45 @@ impl Contract {
         json!({"day": day, "seed": crisis_seed(day)})
     }
 
-    /// Record a claimed result of today's crisis. The contract checks the form of the claim (today's seed, a
-    /// well-formed move list, a score of 0..100, a known ending); it does NOT replay the simulation, so `score` and
-    /// `ending` are the caller's word. Browsers replay every entry from `seed` + `moves` and mark one that does not
-    /// replay. One entry per account per day (a new claim replaces it only with a higher score), at most
-    /// `MAX_RUNS_PER_DAY` per day sorted by score, then by who came first; the latest `MAX_RUN_DAYS` days with entries
-    /// are kept. Returns whether the claim was recorded.
-    pub fn submit_run(seed: u32, moves: String, score: u8, ending: String) -> bool {
+    /// What the contract makes of a crisis played with `moves`: it replays the game (`crisis-core`, the same engine
+    /// as the browser) and returns `{ ending, score, epochs, kept, of, credibility, printed_permille, moves }`, where
+    /// `moves` are the ones the game used. Fails if the moves are malformed or end before the crisis does.
+    pub fn replay_run(seed: u32, moves: String) -> Value {
+        let ms = crisis_core::decode_moves(&moves).filter(|m| !m.is_empty())
+            .unwrap_or_else(|| env::panic_str("moves must be 1 to 10 triples like 1t350.0n0 (answer 0-2, lever n|r|t|m|g, value of 1-9 digits)"));
+        let r = crisis_core::replay(seed, &ms).unwrap_or_else(|| env::panic_str("these moves end before the crisis does: a result needs the whole week"));
+        json!({
+            "ending": r.ending.as_str(), "score": r.score, "epochs": r.epochs, "kept": r.kept, "of": r.of,
+            "credibility": r.credibility, "printed_permille": r.printed_permille,
+            "moves": crisis_core::encode_moves(&ms[..r.epochs as usize]),
+        })
+    }
+
+    /// Put today's crisis on the board. The contract replays the moves itself and records the score and ending it
+    /// computes, so every entry on the board is a real result. One entry per account per day (a new run replaces it
+    /// only with a higher score), at most `MAX_RUNS_PER_DAY` per day sorted by score, then by who came first; the
+    /// latest `MAX_RUN_DAYS` days with entries are kept. Returns `{ recorded, score, ending }`.
+    pub fn submit_run(seed: u32, moves: String) -> Value {
         let now = env::block_timestamp_ms();
         let day = crisis_day_at(now);
         let today = crisis_seed(day);
         require!(seed == today, format!("seed {seed} is not the crisis of the day (day {day}, seed {today})"));
-        require!(moves_are_well_formed(&moves), "moves must be 1 to 10 triples like 1t350.0n0 (answer 0-2, lever n|r|t|m|g, value of 1-9 digits)");
-        require!(score <= 100, "score must be 0..100");
-        require!(ENDINGS.contains(&ending.as_str()), "ending must be one of survived, run, impeached, hyperinflation");
+        let r = Self::replay_run(seed, moves);
+        let score = r["score"].as_u64().unwrap_or(0) as u8;
+        let ending = r["ending"].as_str().unwrap_or("").to_string();
+        let moves = r["moves"].as_str().unwrap_or("").to_string();
+        let verdict = |recorded: bool| json!({"recorded": recorded, "score": score, "ending": ending});
         let account = Self::caller();
         let key = run_day_key(day);
         let mut runs: Vec<Run> = load(&key).unwrap_or_default();
         let own = runs.iter().position(|r| r.account == account);
         match own {
-            Some(i) if score <= runs[i].score => return false,
+            Some(i) if score <= runs[i].score => return verdict(false),
             Some(i) => { runs.remove(i); }
-            None if runs.len() >= MAX_RUNS_PER_DAY && runs.last().is_some_and(|r| score <= r.score) => return false,
+            None if runs.len() >= MAX_RUNS_PER_DAY && runs.last().is_some_and(|r| score <= r.score) => return verdict(false),
             None => {}
         }
-        // behind every entry that scores at least as much: an equal score keeps the earlier claim ahead
+        // behind every entry that scores at least as much: an equal score keeps the earlier run ahead
         let at = runs.iter().position(|r| r.score < score).unwrap_or(runs.len());
         runs.insert(at, Run { account: account.clone(), moves: moves.clone(), score, ending: ending.clone(), at_ms: now });
         runs.truncate(MAX_RUNS_PER_DAY);
@@ -949,7 +1270,7 @@ impl Contract {
             store(KEY_RUN_DAYS, &days);
         }
         log_event("lemon-bank", "crisis_run", json!([{"account": account, "day": day, "seed": seed, "score": score, "ending": ending, "moves": moves}]));
-        true
+        verdict(true)
     }
 
     /// The board of `day` (default: today), best first. `seed` is that day's seed, `today` today's day number.
@@ -983,13 +1304,26 @@ impl Contract {
         })
     }
 
-    /// A page of ALL registered accounts in registration order, as (account id, wallet, deposit value); the deposit
-    /// value is "0" for an account without a deposit. `from_index` counts registered accounts, so paging with
-    /// `from_index += limit` (at most 200 per call) until `get_state().accounts` visits every account once.
-    pub fn get_depositors(&self, from_index: u32, limit: u32) -> Vec<(String, String, String)> {
+    /// A page of ALL registered accounts, as (account id, wallet, deposit value, owed by a past collapse). Paging with
+    /// `from_index += limit` (at most 200 per call) until `get_state().accounts` visits every account once; the sum
+    /// of wallets and owed plus the bank's reserve and loans is the supply, give or take the rounding dust of the
+    /// collapses (`unsettled` minus what is owed).
+    pub fn get_depositors(&self, from_index: u32, limit: u32) -> Vec<(String, String, String, String)> {
         let b = &self.bank;
-        b.order.iter().skip(from_index as usize).take(limit.min(200) as usize)
-            .map(|id| { let a = &b.accounts[id]; (id.clone(), u(a.wallet), u(b.value_of(id))) })
+        self.accounts.iter().skip(from_index as usize).take(limit.min(200) as usize)
+            .map(|(id, a)| {
+                let value = if a.era >= b.era { a.shares * b.index / bank_core::SCALE } else { 0 };
+                (id.clone(), u(a.wallet), u(value), u(self.owed(a)))
+            })
+            .collect()
+    }
+
+    /// Accounts in a page (same paging as `get_depositors`) that a past collapse still owes: what a keeper passes to
+    /// `settle`.
+    pub fn get_unsettled(&self, from_index: u32, limit: u32) -> Vec<String> {
+        self.accounts.iter().skip(from_index as usize).take(limit.min(200) as usize)
+            .filter(|(_, a)| a.era < self.bank.era && (a.shares > 0 || a.insured > 0))
+            .map(|(id, _)| id.clone())
             .collect()
     }
 }
@@ -1037,8 +1371,19 @@ mod tests {
         name.parse().unwrap()
     }
 
-    fn price() -> u128 {
-        Contract::storage_price().as_yoctonear()
+    fn price(c: &Contract) -> u128 {
+        c.storage_price().as_yoctonear()
+    }
+
+    /// Every LEMON is somewhere: wallets of all stored accounts, the vault, the loans, what collapses still owe.
+    fn conserved(c: &Contract) {
+        let wallets: u128 = c.accounts.iter().map(|(_, a)| a.wallet).sum();
+        assert_eq!(c.bank.supply, wallets + c.bank.reserve + c.bank.loans + c.bank.unsettled, "conservation");
+    }
+
+    /// A stored account (after a call its working copy is written back).
+    fn acc(c: &Contract, who: &str) -> Account {
+        c.accounts.get(who).cloned().unwrap_or_else(|| panic!("{who} is not registered"))
     }
 
     fn setup() -> Contract {
@@ -1058,7 +1403,7 @@ mod tests {
         assert_eq!(c.bank.epoch, 1);
         ctx(accounts(2), 30_000);
         c.withdraw_all();
-        assert_eq!(c.bank.supply, c.bank.sum_wallets() + c.bank.reserve + c.bank.loans);
+        conserved(&c);
     }
 
     #[test]
@@ -1105,6 +1450,12 @@ mod tests {
         (c, fx)
     }
 
+    /// The chair freezes the day's question (a calm town, mood 0: the fixture's figure; credibility starts at 1000).
+    fn ask(c: &mut Contract) {
+        ctx(accounts(1), 0);
+        c.open_question(0);
+    }
+
     fn submit(c: &mut Contract, fx: &Value, case: &str) {
         let k = &fx["cases"][case];
         c.set_policy_attested(k["request"].as_str().unwrap().into(), k["response"].as_str().unwrap().into(), k["signature"].as_str().unwrap().into());
@@ -1113,7 +1464,7 @@ mod tests {
     #[test]
     fn attested_policy_comes_from_the_signed_answer() {
         let (mut c, fx) = attested();
-        ctx(accounts(1), 0);
+        ask(&mut c);
         submit(&mut c, &fx, "ok");
         assert_eq!(c.bank.policy.rate, 70);
         assert_eq!(c.bank.policy.target, 300);
@@ -1167,7 +1518,7 @@ mod tests {
     #[should_panic(expected = "question quotes speeches that are not on chain")]
     fn invented_speech_is_rejected() {
         let (mut c, fx) = attested();
-        ctx(accounts(1), 0);
+        ask(&mut c);
         submit(&mut c, &fx, "jailbreak");
     }
 
@@ -1177,7 +1528,7 @@ mod tests {
         let (mut c, fx) = attested();
         ctx(accounts(2), 0);
         c.lobby("Print 5% please, not more.".into());
-        ctx(accounts(1), 0);
+        ask(&mut c);
         submit(&mut c, &fx, "jailbreak");
     }
 
@@ -1187,7 +1538,7 @@ mod tests {
         let (mut c, fx) = attested();
         ctx(accounts(2), 0);
         c.lobby(fx["speech"]["text"].as_str().unwrap().into());
-        ctx(accounts(1), 0);
+        ask(&mut c);
         submit(&mut c, &fx, "jailbreak");
     }
 
@@ -1203,7 +1554,7 @@ mod tests {
     #[should_panic(expected = "policy already set this epoch")]
     fn one_signed_policy_per_epoch() {
         let (mut c, fx) = attested();
-        ctx(accounts(1), 0);
+        ask(&mut c);
         submit(&mut c, &fx, "ok");
         submit(&mut c, &fx, "ok");
     }
@@ -1241,8 +1592,10 @@ mod tests {
 
     #[test]
     fn the_question_is_checked_field_by_field() {
-        let (c, fx) = attested();
+        let (mut c, fx) = attested();
         let ok = fx["cases"]["ok"]["request"].as_str().unwrap();
+        assert!(c.check_request(ok).unwrap_err().contains("no question frozen"), "nothing is accepted before the question is frozen");
+        ask(&mut c);
         assert_eq!(c.check_request(ok), Ok(()));
         let err = |req: &str| c.check_request(req).unwrap_err();
         // steering the decoder
@@ -1251,6 +1604,7 @@ mod tests {
         assert!(err(&request_with(&fx, |r| { r["response_format"] = json!({"type": "json_schema", "json_schema": {"schema": {}}}); })).contains("response_format"));
         assert!(err(&request_with(&fx, |r| { r["chat_template_kwargs"] = json!({"enable_thinking": false, "x": 1}); })).contains("chat_template_kwargs"));
         assert!(err(&request_with(&fx, |r| { r["temperature"] = json!(2.0); })).contains("temperature"));
+        assert!(err(&request_with(&fx, |r| { r["temperature"] = json!(0.4); })).contains("temperature must be 0"));
         assert!(err(&request_with(&fx, |r| { r["max_tokens"] = json!(100000); })).contains("max_tokens"));
         assert!(err(&request_with(&fx, |r| { r["model"] = json!("other/model"); })).contains("pinned"));
         assert!(err(&request_with(&fx, |r| { r["messages"][0]["name"] = json!("x"); })).contains("one system and one user"));
@@ -1265,6 +1619,169 @@ mod tests {
         assert!(err(&obs_with(&fx, |o| { o["round"] = json!(7); })).contains("wrong round"));
         assert!(err(&obs_with(&fx, |o| { o["reserve"] = json!(-5); })).contains("whole number"));
         assert!(err(&obs_with(&fx, |o| { o["rumors"] = json!(["vault_empty"]); })).contains("rumours that are not on chain"));
+        // every number is the bank's own, frozen with the question: a relayer cannot show the model another bank
+        assert!(err(&obs_with(&fx, |o| { o["reserve"] = json!(9000); })).contains("misstates reserve: the bank froze 0"));
+        assert!(err(&obs_with(&fx, |o| { o["supply"] = json!(20000); })).contains("misstates supply"));
+        assert!(err(&obs_with(&fx, |o| { o["liabilities"] = json!(1); })).contains("misstates liabilities"));
+        assert!(err(&obs_with(&fx, |o| { o["mintRoom"] = json!(5000); })).contains("misstates mintRoom"));
+        assert!(err(&obs_with(&fx, |o| { o["outflowPermille"] = json!(400); })).contains("misstates outflowPermille"));
+        assert!(err(&obs_with(&fx, |o| { o["reservePermille"] = json!(50); })).contains("misstates reservePermille"));
+        assert!(err(&obs_with(&fx, |o| { o["writedownPermille"] = json!(145); })).contains("misstates writedownPermille"));
+        // the chair's credibility is the contract's; the town's mood is the chair's word, bound to what it froze
+        assert!(err(&obs_with(&fx, |o| { o["credibility"] = json!(10); })).contains("misstates credibility"));
+        assert!(err(&obs_with(&fx, |o| { o["moodPermille"] = json!(900); })).contains("misstates moodPermille"));
+    }
+
+    #[test]
+    fn the_question_the_contract_freezes_is_the_one_the_keeper_sends() {
+        let (mut c, fx) = attested();
+        assert_eq!(c.get_question(), Value::Null);
+        ask(&mut c);
+        let req: Value = near_sdk::serde_json::from_str(fx["cases"]["ok"]["request"].as_str().unwrap()).unwrap();
+        let q = c.get_question();
+        assert_eq!(canonical(&q["observation"]), req["messages"][1]["content"].as_str().unwrap(), "get_question gives the keeper's exact user message");
+        let evs = events();
+        let logged = named(&evs, "lemon-bank", "question");
+        assert_eq!(logged.len(), 1, "the frozen question is in the log before the model answers");
+        assert_eq!(logged[0]["data"][0], q["observation"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "question leaves out speeches: 1 were made before it was frozen, it quotes 0")]
+    fn a_question_that_leaves_out_a_speech_is_rejected() {
+        let (mut c, fx) = attested();
+        ctx(accounts(2), 0);
+        c.lobby(fx["speech"]["text"].as_str().unwrap().into());
+        ask(&mut c);
+        // the relayer asks the model the question without charlie's speech
+        submit(&mut c, &fx, "ok");
+    }
+
+    #[test]
+    #[should_panic(expected = "the chair has already read the room this bank day")]
+    fn speeches_wait_for_the_next_day_once_the_question_is_frozen() {
+        let (mut c, _) = attested();
+        ask(&mut c);
+        ctx(accounts(2), 0);
+        c.lobby("too late".into());
+    }
+
+    #[test]
+    fn a_speech_after_the_question_is_heard_the_next_day() {
+        let (mut c, _) = attested();
+        ask(&mut c);
+        ctx(accounts(4), 30_000);
+        c.advance_epoch();
+        ctx(accounts(2), 30_000);
+        c.lobby("now you hear me".into());
+        assert_eq!(c.bank.speeches.len(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "only the chair opens the day's question")]
+    fn only_the_chair_freezes_the_question() {
+        let (mut c, _) = attested();
+        ctx(accounts(2), 0);
+        c.open_question(0);
+    }
+
+    #[test]
+    #[should_panic(expected = "already open")]
+    fn the_question_is_frozen_once_a_day() {
+        let (mut c, _) = attested();
+        ask(&mut c);
+        c.open_question(500);
+    }
+
+    #[test]
+    #[should_panic(expected = "mood is permille")]
+    fn mood_is_permille() {
+        let (mut c, _) = attested();
+        ctx(accounts(1), 0);
+        c.open_question(1001);
+    }
+
+    #[test]
+    #[should_panic(expected = "accepts only signed policies for good")]
+    fn signed_policies_cannot_be_switched_off() {
+        let (mut c, _) = attested();
+        ctx(accounts(0), 0);
+        c.set_chair_signer(None, "m".into(), None);
+    }
+
+    #[test]
+    fn credibility_follows_the_simulations_rule() {
+        let mut cr = Credibility::default();
+        assert_eq!(cr.value, 1000);
+        cr.close_day(true, 100); // calm words, outflow up from 0 to 10%: a lie
+        assert_eq!((cr.value, cr.last_outflow_permille), (800, 100));
+        cr.close_day(true, 90); // outflow fell: forgiven a little
+        assert_eq!(cr.value, 850);
+        cr.close_day(false, 400); // alarming words: no lie, whatever the outflow
+        assert_eq!(cr.value, 900);
+        cr.close_day(true, 50); // under 6%: no lie
+        assert_eq!(cr.value, 950);
+        for _ in 0..6 { cr.close_day(true, cr.last_outflow_permille + 100); }
+        assert_eq!(cr.value, 200, "never below the floor");
+        cr.bailout();
+        assert_eq!((cr.value, cr.last_outflow_permille), (500, 0), "a bailout restores at least 500");
+        for _ in 0..20 { cr.close_day(false, 0); }
+        assert_eq!(cr.value, 1000, "never above 1,000");
+    }
+
+    #[test]
+    fn calm_words_then_a_run_cost_the_chair_credibility_on_chain() {
+        let mut c = setup();
+        ctx(accounts(2), 0);
+        c.deposit(U128(5000));
+        ctx(accounts(3), 0);
+        c.deposit(U128(5000));
+        ctx(accounts(1), 0);
+        c.set_policy(40, 200, U128(0), U128(0), "calm".into(), "All is well.".into(), "".into());
+        ctx(accounts(2), 0);
+        c.withdraw(U128(2000)); // a fifth of the deposits leave on the day the chair said "calm"
+        ctx(accounts(4), 30_000);
+        c.advance_epoch();
+        assert_eq!(c.get_state()["credibility"], 800);
+        // the next day nobody leaves and the chair says nothing: the town forgives 50
+        ctx(accounts(4), 60_000);
+        c.advance_epoch();
+        assert_eq!(c.get_state()["credibility"], 850);
+        ctx(accounts(1), 60_000);
+        c.open_question(300);
+        assert_eq!(c.get_question()["observation"]["credibility"], 850, "the question carries the contract's figure");
+        // an impeachment gives the new chair full credit
+        ctx(accounts(0), 60_000);
+        c.set_chair(accounts(5));
+        assert_eq!(c.get_state()["credibility"], 1000);
+    }
+
+    #[test]
+    fn the_question_reads_the_closed_days_outflow_and_write_off() {
+        let mut c = setup();
+        ctx(accounts(2), 0);
+        c.deposit(U128(5000));
+        ctx(accounts(3), 0);
+        c.deposit(U128(5000));
+        ctx(accounts(4), 30_000);
+        c.advance_epoch();
+        ctx(accounts(4), 60_000);
+        c.advance_epoch();
+        ctx(accounts(2), 60_000);
+        c.withdraw(U128(1000));
+        let s = c.get_state();
+        let (out, liab) = (s["outflow"].as_str().unwrap().parse::<u128>().unwrap(), s["liabilities"].as_str().unwrap().parse::<u128>().unwrap());
+        ctx(accounts(4), 90_000);
+        c.advance_epoch();
+        ctx(accounts(1), 90_000);
+        c.open_question(120);
+        let o = &c.get_question()["observation"];
+        assert_eq!(o["outflowPermille"], (out * 1000 / (liab + out)) as u64, "outflow / (liabilities + outflow), rounded down as in the simulation");
+        assert!(o["outflowPermille"].as_u64().unwrap() > 0);
+        assert_eq!(o["moodPermille"], 120);
+        assert_eq!(o["credibility"], 1000, "no statement on those days: nothing to disbelieve");
+        assert_eq!(o["supply"], c.bank.supply as u64);
+        assert_eq!(o["mintRoom"], c.bank.mint_allowance() as u64);
     }
 
     // ------------------------------------------------------------ storage registration (NEP-145)
@@ -1281,18 +1798,19 @@ mod tests {
     fn storage_deposit_registers_and_refunds_the_excess() {
         let mut c = setup();
         let stranger = id("stranger.near");
-        assert_eq!(c.storage_balance_bounds(), json!({"min": price().to_string(), "max": price().to_string()}));
-        assert_eq!(price(), 2_500_000_000_000_000_000_000, "250 bytes at 10^19 yoctoNEAR per byte");
+        assert_eq!(c.storage_balance_bounds(), json!({"min": price(&c).to_string(), "max": price(&c).to_string()}));
+        assert_eq!(price(&c), c.account_bytes as u128 * 10_000_000_000_000_000_000, "the measured bytes at 10^19 yoctoNEAR per byte");
+        assert!((150..500).contains(&c.account_bytes), "{} bytes per account", c.account_bytes);
         assert_eq!(c.storage_balance_of(stranger.clone()), None);
         assert!(c.storage_balance_of(accounts(2)).is_some(), "genesis accounts count as registered");
-        let before = c.bank.order.len();
+        let before = c.accounts.len();
 
         // someone else pays for the stranger, with too much attached: the excess goes back to the payer
-        ctx_paying(accounts(2), price() + 700);
+        ctx_paying(accounts(2), price(&c) + 700);
         let bal = c.storage_deposit(Some(stranger.clone()), None);
-        assert_eq!(bal, json!({"total": price().to_string(), "available": "0"}));
+        assert_eq!(bal, json!({"total": price(&c).to_string(), "available": "0"}));
         assert_eq!(c.storage_balance_of(stranger.clone()), Some(bal));
-        assert_eq!(c.bank.order.len(), before + 1);
+        assert_eq!(c.accounts.len(), before + 1);
         let refunds = near_sdk::test_utils::get_created_receipts();
         assert_eq!(refunds.len(), 1);
         assert_eq!(refunds[0].receiver_id, accounts(2));
@@ -1300,9 +1818,9 @@ mod tests {
         assert_eq!(named(&events(), "lemon-bank", "register").len(), 1);
 
         // a second deposit for the same account registers nothing and refunds everything
-        ctx_paying(accounts(3), price());
+        ctx_paying(accounts(3), price(&c));
         c.storage_deposit(Some(stranger.clone()), Some(true));
-        assert_eq!(c.bank.order.len(), before + 1);
+        assert_eq!(c.accounts.len(), before + 1);
         let refunds = near_sdk::test_utils::get_created_receipts();
         assert_eq!(refunds.len(), 1);
         assert_eq!(refunds[0].receiver_id, accounts(3));
@@ -1317,46 +1835,61 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "registering an account takes 2500000000000000000000 yoctoNEAR")]
+    #[should_panic(expected = "registering an account takes")]
     fn storage_deposit_below_the_price_is_refused() {
         let mut c = setup();
-        ctx_paying(id("stranger.near"), price() - 1);
+        ctx_paying(id("stranger.near"), price(&c) - 1);
         c.storage_deposit(None, None);
     }
 
     #[test]
-    fn airdrop_and_bank_calls_need_no_attached_near() {
+    fn a_newcomer_pays_for_its_account_with_the_airdrop() {
         let mut c = setup();
         // an existing account keeps working with nothing attached
         ctx(accounts(2), 0);
         c.deposit(U128(100));
         c.insure(U128(10));
-        // the faucet still creates a new account for free (stated testnet rule)
+        // a newcomer's airdrop with nothing attached is refused: the contract does not pay for strangers' storage
         ctx(id("newcomer.near"), 0);
+        let free = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.airdrop()));
+        assert!(free.is_err());
+        // with the storage price attached it registers the account and pays 1,000 LEMON; the excess comes back
+        ctx_paying(id("newcomer.near"), price(&c) + 5);
         c.airdrop();
         assert_eq!(c.ft_balance_of(id("newcomer.near")).0, 1000);
         assert!(c.storage_balance_of(id("newcomer.near")).is_some());
         assert_eq!(named(&events(), "nep141", "ft_mint")[0]["data"][0], json!({"owner_id": "newcomer.near", "amount": "1000", "memo": "airdrop"}));
+        let refunds = near_sdk::test_utils::get_created_receipts();
+        assert!(format!("{:?}", refunds[0].actions).contains("inner: 5 "), "{:?}", refunds[0].actions);
+        conserved(&c);
     }
 
     // ------------------------------------------------------------ log limits
 
+    fn who_id(i: usize) -> String {
+        format!("{:0>58}.near", i)
+    }
+
     /// A town of `n` depositors (ids of the full 64 bytes, the worst case for log size), all insured. The first one
-    /// is a whale whose withdrawal the bank cannot cover, so the collapse settles all `n` at once. Returns the
-    /// contract and the logs of the collapsing call.
+    /// is a whale whose withdrawal the bank cannot cover. Accounts past the hundred genesis ones register and get
+    /// their LEMON from the whale. Returns the contract and the logs of the collapsing call.
     fn collapse_with(n: usize) -> (Contract, Vec<String>) {
-        let who = |i: usize| id(&format!("{:0>58}.near", i));
+        let who = |i: usize| id(&who_id(i));
         ctx(accounts(0), 0);
-        let genesis: Vec<(AccountId, U128)> = (0..100).map(|i| (who(i), U128(if i == 0 { 500_000 } else { 2000 }))).collect();
+        // the whale's deposit is three times everybody else's: more than the vault plus what the loans fetch in a fire sale
+        let whale = 3 * 900 * n as u128 + 10_000;
+        let genesis: Vec<(AccountId, U128)> = (0..100.min(n)).map(|i| (who(i), U128(if i == 0 { whale + 2000 * n as u128 } else { 2000 }))).collect();
         let mut c = Contract::new(accounts(0), accounts(1), genesis, 30);
         assert!(get_logs().len() <= 100);
         for i in 100..n {
-            ctx(who(i), 0);
-            c.airdrop();
+            ctx_paying(who(0), price(&c));
+            c.storage_deposit(Some(who(i)), None);
+            ctx_paying(who(0), 1);
+            c.ft_transfer(who(i), U128(2000), None);
         }
         for i in 0..n {
             ctx(who(i), 0);
-            c.deposit(U128(if i == 0 { 400_000 } else { 900 }));
+            c.deposit(U128(if i == 0 { whale } else { 900 }));
             c.insure(U128(50));
         }
         ctx(accounts(4), 30_000);
@@ -1364,29 +1897,86 @@ mod tests {
         assert!(c.bank.loans > 0);
         ctx(who(0), 30_000);
         c.withdraw_all();
-        assert!(c.bank.collapsed, "the whale's run must end in a collapse");
+        assert!(c.bank.collapsed, "the whale's run must end in a collapse: {}", c.get_state());
         (c, get_logs())
     }
 
     #[test]
-    fn collapse_of_150_depositors_stays_within_the_log_limits() {
-        let (c, logs) = collapse_with(150);
-        assert!(logs.len() <= 100, "{} logs in one receipt", logs.len());
-        assert!(logs.len() <= 6, "the number of logs must not grow with the town: {}", logs.len());
-        let bytes: usize = logs.iter().map(|l| l.len()).sum();
-        assert!(bytes <= 16_384, "{bytes} bytes of logs in one receipt");
-        let evs: Vec<Value> = logs.iter().map(|l| near_sdk::serde_json::from_str(l.strip_prefix("EVENT_JSON:").unwrap()).unwrap()).collect();
-        let collapse = &named(&evs, "lemon-bank", "collapse")[0]["data"][0];
-        let settled = collapse["settled_accounts"].as_u64().unwrap() as usize;
-        assert_eq!(settled, 150);
-        assert_eq!(collapse["insured_accounts"], json!(150));
-        assert_eq!(collapse["insurance_total"], json!("22500"));
-        assert_eq!(collapse["nep141_transfers_omitted"], json!(settled - MAX_EVENT_ENTRIES));
-        assert_eq!(collapse["nep141_mints_omitted"], json!(150 - MAX_EVENT_ENTRIES));
-        assert!(named(&evs, "lemon-bank", "settle").is_empty() && named(&evs, "lemon-bank", "insurance_payout").is_empty());
-        assert_eq!(named(&evs, "nep141", "ft_transfer")[0]["data"].as_array().unwrap().len(), MAX_EVENT_ENTRIES);
-        assert_eq!(named(&evs, "nep141", "ft_mint")[0]["data"].as_array().unwrap().len(), MAX_EVENT_ENTRIES);
-        assert_eq!(c.bank.supply, c.bank.sum_wallets() + c.bank.reserve + c.bank.loans);
+    fn a_collapse_of_20_depositors_settles_in_batches() {
+        collapse_and_settle(20);
+    }
+
+    #[test]
+    fn a_collapse_of_400_depositors_costs_what_one_of_20_does() {
+        collapse_and_settle(400);
+    }
+
+    fn collapse_and_settle(n: usize) {
+        {
+            let (mut c, logs) = collapse_with(n);
+            assert!(logs.len() <= 6, "the logs of a collapse must not grow with the town: {}", logs.len());
+            let evs: Vec<Value> = logs.iter().map(|l| near_sdk::serde_json::from_str(l.strip_prefix("EVENT_JSON:").unwrap()).unwrap()).collect();
+            let collapse = &named(&evs, "lemon-bank", "collapse")[0]["data"][0];
+            assert_eq!(collapse["insurance"], json!((50 * 3 * n).to_string()));
+            conserved(&c);
+            // anyone settles everybody, in batches, each within a receipt's log limits
+            let mut paid = 0;
+            let total = c.accounts.len();
+            for from in (0..total).step_by(200) {
+                let page = c.get_unsettled(from, 200);
+                for batch in page.chunks(MAX_SETTLE_BATCH) {
+                    ctx(accounts(5), 30_000);
+                    let ids: Vec<AccountId> = batch.iter().map(|s| id(s)).collect();
+                    paid += c.settle(ids);
+                    let logs = get_logs();
+                    let bytes: usize = logs.iter().map(|l| l.len()).sum();
+                    assert!(logs.len() <= 10 && bytes <= 16_384, "{} logs, {bytes} bytes", logs.len());
+                }
+            }
+            assert_eq!(paid as usize, n);
+            conserved(&c);
+            assert!(c.bank.unsettled < n as u128, "only rounding dust is left owed");
+            assert!(acc(&c, &who_id(1)).wallet >= 150, "a small depositor got its insurance");
+        }
+    }
+
+    #[test]
+    fn there_is_no_limit_on_accounts_and_a_closed_account_gets_its_deposit_back() {
+        let mut c = setup();
+        for i in 0..600 {
+            ctx_paying(accounts(2), price(&c));
+            c.storage_deposit(Some(id(&format!("a{i}.testnet"))), None);
+        }
+        assert_eq!(c.accounts.len(), 602);
+        conserved(&c);
+        // one payer registering hundreds of names locks nobody out: a newcomer still registers itself
+        ctx_paying(id("newcomer.testnet"), price(&c));
+        c.storage_deposit(None, None);
+        assert!(c.storage_balance_of(id("newcomer.testnet")).is_some());
+        assert_eq!(c.accounts.len(), 603);
+        // a registered account with LEMON in its wallet: closing needs force, which burns that LEMON
+        ctx_paying(accounts(2), 1);
+        c.ft_transfer(id("a0.testnet"), U128(7), None);
+        ctx_paying(id("a0.testnet"), 1);
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.storage_unregister(None)));
+        assert!(refused.is_err());
+        let supply = c.bank.supply;
+        ctx_paying(id("a0.testnet"), 1);
+        assert!(c.storage_unregister(Some(true)));
+        assert_eq!(c.bank.supply, supply - 7);
+        assert!(c.storage_balance_of(id("a0.testnet")).is_none());
+        let refunds = near_sdk::test_utils::get_created_receipts();
+        assert_eq!(refunds[0].receiver_id, id("a0.testnet"));
+        assert_eq!(c.accounts.len(), 602);
+        conserved(&c);
+        // an account with money in the bank cannot close
+        ctx(accounts(3), 0);
+        c.deposit(U128(10));
+        ctx_paying(accounts(3), 1);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.storage_unregister(Some(true)))).is_err());
+        // an unknown account: false
+        ctx_paying(id("nobody.testnet"), 1);
+        assert!(!c.storage_unregister(None));
     }
 
     #[test]
@@ -1456,6 +2046,8 @@ mod tests {
         step!(accounts(2), 0, deposit(U128(5000)));
         step!(accounts(3), 0, deposit(U128(4000)));
         assert_eq!(c.ft_balance_of(bank.clone()).0, 9000, "the bank's balance is reserve + loans");
+        ctx_paying(accounts(4), price(&c));
+        c.storage_deposit(None, None);
         step!(accounts(4), 0, airdrop());
         step!(accounts(4), 0, insure(U128(100)));
         step!(accounts(4), 0, lobby("print".into()));
@@ -1473,6 +2065,8 @@ mod tests {
             if !c.bank.collapsed { step!(who, 90_000, withdraw_all()); }
         }
         assert!(c.bank.collapsed);
+        // anyone pays the depositors and the insured what the collapse owes them
+        step!(accounts(5), 90_000, settle(vec![accounts(2), accounts(3), accounts(4)]));
         step!(accounts(5), 120_000, advance_epoch()); // bailout
         assert!(!c.bank.collapsed);
         assert!(ix.balances[bank.as_str()] > 0);
@@ -1489,9 +2083,10 @@ mod tests {
         ctx(accounts(0), 0);
         c.set_chair_signer(Some(format!("0x{}", "AB".repeat(32))), "m".into(), Some("cd".repeat(32)));
         assert_eq!(named(&events(), "lemon-bank", "set_chair_signer")[0]["data"][0], json!({"signer": "ab".repeat(32), "model": "m", "prompt_sha256": "cd".repeat(32)}));
+        // another key, model and prompt: allowed (an impeachment pins the new chair's prompt this way)
         ctx(accounts(0), 0);
-        c.set_chair_signer(None, "".into(), None);
-        assert_eq!(named(&events(), "lemon-bank", "set_chair_signer")[0]["data"][0], json!({"signer": null, "model": "", "prompt_sha256": null}));
+        c.set_chair_signer(Some("ef".repeat(32)), "m2".into(), Some("01".repeat(32)));
+        assert_eq!(named(&events(), "lemon-bank", "set_chair_signer")[0]["data"][0], json!({"signer": "ef".repeat(32), "model": "m2", "prompt_sha256": "01".repeat(32)}));
         ctx(accounts(0), 0);
         c.set_owner(accounts(4));
         assert_eq!(named(&events(), "lemon-bank", "set_owner")[0]["data"][0], json!({"owner_id": accounts(4)}));
@@ -1557,7 +2152,7 @@ mod tests {
         ctx_callback(PromiseResult::Failed);
         assert_eq!(c.ft_resolve_transfer(accounts(2), accounts(3), U128(1000)).0, 900);
         assert_eq!(c.ft_balance_of(accounts(3)).0, 0);
-        assert_eq!(c.bank.supply, c.bank.sum_wallets() + c.bank.reserve + c.bank.loans);
+        conserved(&c);
     }
 
     #[test]
@@ -1616,51 +2211,18 @@ mod tests {
         let mut c = setup();
         ctx(accounts(2), 0);
         c.deposit(U128(1200));
-        ctx(accounts(4), 0);
+        ctx_paying(accounts(4), price(&c));
         c.airdrop();
         let all = c.get_depositors(0, 500);
+        let z = || "0".to_string();
         assert_eq!(all, vec![
-            (accounts(2).to_string(), "3800".to_string(), "1200".to_string()),
-            (accounts(3).to_string(), "5000".to_string(), "0".to_string()),
-            (accounts(4).to_string(), "1000".to_string(), "0".to_string()),
+            (accounts(2).to_string(), "3800".to_string(), "1200".to_string(), z()),
+            (accounts(3).to_string(), "5000".to_string(), z(), z()),
+            (accounts(4).to_string(), "1000".to_string(), z(), z()),
         ]);
         assert_eq!(c.get_state()["accounts"], json!(3));
         assert_eq!(c.get_depositors(1, 1), all[1..2].to_vec());
         assert!(c.get_depositors(3, 10).is_empty());
-    }
-
-    // ------------------------------------------------------------ state layout
-
-    /// The stored state of the build that was on testnet before the security review (wasm d3d41813…), field for field. Frozen here: if
-    /// `Contract`, `Bank`, `Policy`, `Account` or `Note` change shape, `deployed_state_loads_without_migrate` fails
-    /// and `migrate` has to learn this layout.
-    mod deployed {
-        use near_sdk::near;
-        use std::collections::BTreeMap;
-
-        #[near(serializers = [borsh])]
-        pub struct Policy { pub rate: u128, pub target: u128, pub mint: u128, pub gate: u128, pub tone: String, pub statement: String, pub attestation: String }
-
-        #[near(serializers = [borsh])]
-        pub struct Account { pub wallet: u128, pub shares: u128, pub withdrawn: u128, pub withdrawn_epoch_id: i64, pub insured: u128, pub insured_round: i64, pub airdropped: bool }
-
-        #[near(serializers = [borsh])]
-        pub struct Note { pub who: String, pub text: String, pub epoch_id: u64 }
-
-        #[near(serializers = [borsh])]
-        pub struct Bank {
-            pub supply: u128, pub reserve: u128, pub loans: u128, pub total_shares: u128, pub index: u128, pub collapsed: bool,
-            pub epoch: u32, pub round: u32, pub epoch_id: u64, pub policy: Policy, pub policy_set_epoch_id: i64,
-            pub minted_this_round: u128, pub round_start_supply: u128, pub liabilities_at_collapse: u128, pub outflow: u128,
-            pub speeches: Vec<Note>, pub rumors: Vec<Note>, pub order: Vec<String>, pub accounts: BTreeMap<String, Account>,
-            pub chair: String, pub owner: String,
-        }
-
-        #[near(serializers = [borsh])]
-        pub struct Contract {
-            pub bank: Bank, pub epoch_ms: u64, pub last_epoch_ms: u64,
-            pub chair_signer: Option<String>, pub chair_model: String, pub chair_prompt: Option<String>,
-        }
     }
 
     #[test]
@@ -1668,91 +2230,17 @@ mod tests {
         let mut c = setup(); // genesis 10,000
         assert_eq!(c.get_state()["max_supply"], json!("12500"));
         assert_eq!(load::<u128>(KEY_MAX_SUPPLY), Some(12_500));
-        // two newcomers fit under it, the third does not
-        for n in ["n1.near", "n2.near"] { ctx(id(n), 0); c.airdrop(); }
-        assert_eq!(c.get_state()["supply"], json!("12000"));
-        ctx(id("n3.near"), 0);
-        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.airdrop()));
-        assert!(refused.is_err(), "an airdrop past the ceiling must fail");
-        assert_eq!(c.get_state()["supply"], json!("12000"));
-        // and it cannot be set again
-        ctx(accounts(0), 0);
-        let again = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.seal_max_supply(U128(1_000_000))));
-        assert!(again.is_err(), "the ceiling is set once");
-        assert_eq!(load::<u128>(KEY_MAX_SUPPLY), Some(12_500));
-    }
-
-    #[test]
-    fn a_bank_deployed_before_the_rule_gets_its_ceiling_once() {
-        let mut c = setup();
-        env::storage_remove(KEY_MAX_SUPPLY); // the state as it is on a bank deployed before the rule: no record
-        assert_eq!(c.get_state()["max_supply"], Value::Null);
-        // without a ceiling everything works as it did
-        ctx(id("n1.near"), 0);
+        // one newcomer fits under it; the next airdrop would eat into the last tenth kept for the chair and a rescue
+        ctx_paying(id("n1.near"), price(&c));
         c.airdrop();
-        ctx(accounts(2), 0);
-        c.deposit(U128(5000));
-        ctx(accounts(0), 31_000);
-        c.advance_epoch(); // the bank lends
-        ctx(accounts(0), 62_000);
-        c.advance_epoch(); // the loans earn
-        let supply: u128 = c.get_state()["supply"].as_str().unwrap().parse().unwrap();
-        // the ceiling cannot be set below what exists
-        let low = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.seal_max_supply(U128(supply - 1))));
-        assert!(low.is_err());
-        assert_eq!(c.get_state()["max_supply"], Value::Null);
-        // sealed at the supply in existence: from now on nothing prints
-        c.seal_max_supply(U128(supply));
-        assert_eq!(c.get_state()["max_supply"], json!(supply.to_string()));
-        ctx(accounts(0), 93_000);
-        c.advance_epoch();
-        assert!(c.get_state()["supply"].as_str().unwrap().parse::<u128>().unwrap() <= supply, "no yield past the ceiling");
-        ctx(id("n2.near"), 93_000);
-        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.airdrop())).is_err());
-        // a second seal is refused
-        ctx(accounts(0), 93_000);
-        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.seal_max_supply(U128(supply * 2)))).is_err());
+        assert_eq!(c.get_state()["supply"], json!("11000"));
+        ctx_paying(id("n2.near"), price(&c));
+        let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.airdrop()));
+        assert!(refused.is_err(), "an airdrop into the headroom must fail");
+        assert_eq!(c.get_state()["supply"], json!("11000"));
     }
 
-    #[test]
-    fn deployed_state_loads_without_migrate() {
-        ctx(accounts(0), 0);
-        let acct = |wallet, shares, airdropped| deployed::Account { wallet, shares, withdrawn: 7, withdrawn_epoch_id: 12, insured: 50, insured_round: 1, airdropped };
-        let old = deployed::Contract {
-            bank: deployed::Bank {
-                supply: 9_000, reserve: 1_500, loans: 4_000, total_shares: 5_000_000_000_000_000, index: 1_050_000_000_000, collapsed: false,
-                epoch: 3, round: 1, epoch_id: 13,
-                policy: deployed::Policy { rate: 70, target: 300, mint: 10, gate: 0, tone: "confident".into(), statement: "steady".into(), attestation: "ed25519:ab".into() },
-                policy_set_epoch_id: 13, minted_this_round: 10, round_start_supply: 8_800, liabilities_at_collapse: 6_000, outflow: 40,
-                speeches: vec![deployed::Note { who: "charlie".into(), text: "print".into(), epoch_id: 13 }],
-                rumors: vec![deployed::Note { who: "danny".into(), text: "vault_empty".into(), epoch_id: 13 }],
-                order: vec!["charlie".into(), "danny".into()],
-                accounts: [("charlie".to_string(), acct(3_000, 5_000_000_000_000_000, false)), ("danny".to_string(), acct(500, 0, true))].into_iter().collect(),
-                chair: "bob".into(), owner: "dao".into(),
-            },
-            epoch_ms: 30_000, last_epoch_ms: 390_000,
-            chair_signer: Some("ab".repeat(32)), chair_model: "m".into(), chair_prompt: Some("cd".repeat(32)),
-        };
-        env::state_write(&old);
-        // the upgraded code reads it as it is: every field where it was, nothing left over
-        let c: Contract = env::state_read().expect("the deployed layout must deserialize");
-        assert_eq!(near_sdk::borsh::to_vec(&c).unwrap(), near_sdk::borsh::to_vec(&old).unwrap());
-        assert_eq!((c.bank.supply, c.bank.reserve, c.bank.loans, c.bank.epoch_id), (9_000, 1_500, 4_000, 13));
-        assert_eq!(c.bank.supply, c.bank.sum_wallets() + c.bank.reserve + c.bank.loans);
-        assert_eq!((c.epoch_ms, c.last_epoch_ms), (30_000, 390_000));
-        assert_eq!(c.chair_prompt, Some("cd".repeat(32)));
-        assert_eq!(c.bank.accounts["charlie"].shares, 5_000_000_000_000_000);
-        // accounts from before this build are registered, and the new per-account cap counts the stored speeches
-        assert!(c.storage_balance_of(id("danny")).is_some());
-        assert_eq!(c.bank.speeches[0].who, "charlie");
-        let mut c = c;
-        ctx(id("charlie"), 390_000);
-        c.lobby("again".into());
-        assert_eq!(c.bank.speeches.len(), 2);
-        ctx_paying(id("charlie"), 1);
-        c.ft_transfer(id("danny"), U128(100), None);
-        assert_eq!(c.ft_balance_of(id("danny")).0, 600);
-    }
+
 
     // ------------------------------------------------------------ crisis of the day, supply log, stats
 
@@ -1761,10 +2249,33 @@ mod tests {
         (CRISIS_DAY_ZERO + day - 1) * 86_400_000 + ms
     }
 
-    /// `who` claims `score` for the crisis of `day`, `ms` into the day.
-    fn claim(who: &str, day: u64, ms: u64, score: u8) -> bool {
+    /// Ten-move games of the crisis of `day` with the score the contract gives each: one game per distinct score,
+    /// lowest first.
+    fn scored(day: u64) -> Vec<(String, u8)> {
+        let seed = crisis_seed(day as u32);
+        let mut rng = crisis_core::Rng(seed);
+        let mut by_score = std::collections::BTreeMap::new();
+        for g in 0..600 {
+            let moves: Vec<String> = (0..10).map(|_| {
+                let a = rng.int(3);
+                match if g % 3 == 0 { 0 } else { rng.int(4) } {
+                    0 => format!("{a}n0"),
+                    1 => format!("{a}r{}", 40 + rng.int(60)),
+                    2 => format!("{a}t{}", 200 + rng.int(300)),
+                    _ => format!("{a}g{}", [0, 300, 1000][rng.int(3) as usize]),
+                }
+            }).collect();
+            let m = moves.join(".");
+            let r = Contract::replay_run(seed, m.clone());
+            by_score.entry(r["score"].as_u64().unwrap() as u8).or_insert(m);
+        }
+        by_score.into_iter().map(|(s, m)| (m, s)).collect()
+    }
+
+    /// `who` puts `moves` on the board of `day`, `ms` into the day: whether it was recorded.
+    fn claim(who: &str, day: u64, ms: u64, moves: &str) -> bool {
         ctx(id(who), on_day(day, ms));
-        Contract::submit_run(crisis_seed(day as u32), "1t350.0n0".into(), score, "survived".into())
+        Contract::submit_run(crisis_seed(day as u32), moves.into())["recorded"].as_bool().unwrap()
     }
 
     fn board(day: Option<u32>) -> Vec<(String, u64)> {
@@ -1793,11 +2304,11 @@ mod tests {
     #[test]
     fn moves_format_is_checked_by_hand() {
         for good in ["0n0", "2g999999999", "1t350.0n0", "0n0.1r1.2t2.0m3.1g4.2n5.0r6.1t7.2m8.0g9"] {
-            assert!(moves_are_well_formed(good), "{good}");
+            assert!(crisis_core::decode_moves(good).is_some_and(|m| !m.is_empty()), "{good}");
         }
-        for bad in ["", "0n", "3n0", "0x0", "0n1234567890", "0n0.", ".0n0", "0n0..0n0", "0n-1", "0N0", "0n0 ", "0n0,1n0", "0n٣",
+        for bad in ["", "0n", "3n0", "0x0", "0n1234567890", "0n-1", "0N0", "0n0 ", "0n0,1n0", "0n٣",
             "0n0.1r1.2t2.0m3.1g4.2n5.0r6.1t7.2m8.0g9.0n0"] {
-            assert!(!moves_are_well_formed(bad), "{bad:?}");
+            assert!(!crisis_core::decode_moves(bad).is_some_and(|m| !m.is_empty()), "{bad:?}");
         }
     }
 
@@ -1805,95 +2316,130 @@ mod tests {
     #[should_panic(expected = "is not the crisis of the day (day 2, seed 159876298)")]
     fn run_with_the_wrong_seed_is_refused() {
         ctx(accounts(2), on_day(2, 0));
-        Contract::submit_run(crisis_seed(1), "0n0".into(), 50, "survived".into());
+        Contract::submit_run(crisis_seed(1), "0n0".into());
     }
 
     #[test]
     #[should_panic(expected = "moves must be 1 to 10 triples")]
     fn run_with_bad_moves_is_refused() {
         ctx(accounts(2), on_day(2, 0));
-        Contract::submit_run(159_876_298, "1t350;0n0".into(), 50, "survived".into());
+        Contract::submit_run(159_876_298, "1t350;0n0".into());
     }
 
     #[test]
-    #[should_panic(expected = "ending must be one of survived, run, impeached, hyperinflation")]
-    fn run_with_a_bad_ending_is_refused() {
+    #[should_panic(expected = "these moves end before the crisis does")]
+    fn a_run_cut_short_is_refused() {
         ctx(accounts(2), on_day(2, 0));
-        Contract::submit_run(159_876_298, "0n0".into(), 50, "won".into());
+        Contract::submit_run(159_876_298, "0n0".into());
     }
 
     #[test]
-    #[should_panic(expected = "score must be 0..100")]
-    fn run_with_score_101_is_refused() {
-        ctx(accounts(2), on_day(2, 0));
-        Contract::submit_run(159_876_298, "0n0".into(), 101, "survived".into());
+    fn the_contract_scores_the_run_itself() {
+        // the planted claim of the old board: "100/100, survived" for moves that earn 4 and end in a bank run
+        ctx(id("planter.near"), on_day(2, 0));
+        let v = Contract::submit_run(159_876_298, "1t350.1t500.1n0.1n0.1n0.1n0.1n0.1n0.1n0.1n0".into());
+        let r = crisis_core::replay(159_876_298, &crisis_core::decode_moves("1t350.1t500.1n0.1n0.1n0.1n0.1n0.1n0.1n0.1n0").unwrap()).unwrap();
+        assert_eq!(v, json!({"recorded": true, "score": r.score, "ending": r.ending.as_str()}));
+        assert_eq!(board(None), [("planter.near".to_string(), r.score as u64)]);
+        // moves past the end of the crisis are not stored
+        let stored = Contract::get_runs(None)["runs"][0]["moves"].as_str().unwrap().to_string();
+        assert_eq!(stored.split('.').count() as u32, r.epochs);
     }
 
     #[test]
     fn run_is_recorded_with_an_event_and_needs_no_bank_account() {
         let c = setup();
         let before = near_sdk::borsh::to_vec(&c).unwrap();
+        let (moves, score) = scored(3).pop().unwrap();
         ctx(id("stranger.near"), on_day(3, 1234));
-        assert!(!c.bank.is_registered("stranger.near"));
-        assert!(Contract::submit_run(crisis_seed(3), "2m120.0n0".into(), 100, "hyperinflation".into()));
+        assert!(!c.registered("stranger.near"));
+        let v = Contract::submit_run(crisis_seed(3), moves.clone());
+        let ending = v["ending"].as_str().unwrap().to_string();
+        assert_eq!(v, json!({"recorded": true, "score": score, "ending": ending}));
         let evs = events();
+        let stored = Contract::get_runs(None)["runs"][0]["moves"].as_str().unwrap().to_string();
+        assert!(moves.starts_with(&stored));
         assert_eq!(named(&evs, "lemon-bank", "crisis_run")[0]["data"][0],
-            json!({"account": "stranger.near", "day": 3, "seed": crisis_seed(3), "score": 100, "ending": "hyperinflation", "moves": "2m120.0n0"}));
+            json!({"account": "stranger.near", "day": 3, "seed": crisis_seed(3), "score": score, "ending": ending, "moves": stored}));
         assert_eq!(Contract::get_runs(None), json!({"day": 3, "seed": crisis_seed(3), "today": 3,
-            "runs": [{"account": "stranger.near", "moves": "2m120.0n0", "score": 100, "ending": "hyperinflation", "at_ms": on_day(3, 1234)}]}));
+            "runs": [{"account": "stranger.near", "moves": stored, "score": score, "ending": ending, "at_ms": on_day(3, 1234)}]}));
         assert_eq!(Contract::get_runs(Some(2)), json!({"day": 2, "seed": 159_876_298, "today": 3, "runs": []}));
         assert_eq!(near_sdk::borsh::to_vec(&c).unwrap(), before, "the bank state is not touched");
     }
 
     #[test]
     fn only_a_better_run_replaces_an_accounts_own() {
-        assert!(claim("ann", 1, 0, 60));
-        assert!(claim("ben", 1, 1, 70));
-        assert!(!claim("ann", 1, 2, 60), "an equal score does not replace");
-        assert!(!claim("ann", 1, 3, 10));
-        assert!(get_logs().is_empty(), "a claim that is not recorded logs nothing");
-        assert_eq!(board(None), [("ben".to_string(), 70), ("ann".to_string(), 60)]);
+        let s = scored(1);
+        assert!(s.len() >= 3, "{s:?}");
+        let (lo, mid, hi) = (&s[0], &s[s.len() / 2], &s[s.len() - 1]);
+        assert!(claim("ann", 1, 0, &mid.0));
+        assert!(claim("ben", 1, 1, &hi.0));
+        assert!(!claim("ann", 1, 2, &mid.0), "an equal score does not replace");
+        assert!(!claim("ann", 1, 3, &lo.0));
+        assert!(get_logs().is_empty(), "a run that is not recorded logs nothing");
+        assert_eq!(board(None), [("ben".to_string(), hi.1 as u64), ("ann".to_string(), mid.1 as u64)]);
         assert_eq!(Contract::get_runs(None)["runs"][1]["at_ms"], json!(on_day(1, 0)));
-        assert!(claim("ann", 1, 4, 70), "a higher score replaces");
-        // one entry per account; equal scores: the earlier claim stays ahead
-        assert_eq!(board(None), [("ben".to_string(), 70), ("ann".to_string(), 70)]);
+        assert!(claim("ann", 1, 4, &hi.0), "a higher score replaces");
+        // one entry per account; equal scores: the earlier run stays ahead
+        assert_eq!(board(None), [("ben".to_string(), hi.1 as u64), ("ann".to_string(), hi.1 as u64)]);
         assert_eq!(Contract::get_runs(None)["runs"][1]["at_ms"], json!(on_day(1, 4)));
     }
 
     #[test]
     fn board_keeps_the_best_20_in_order() {
-        // scores 30, 31, .. 49 in arrival order
-        for i in 0..20u64 {
-            assert!(claim(&format!("p{i}"), 1, i, 30 + i as u8));
+        let s = scored(1);
+        assert!(s.len() >= 22, "{} distinct scores", s.len());
+        // the 20 scores just above the lowest, in arrival order
+        for i in 0..20 {
+            assert!(claim(&format!("p{i}"), 1, i as u64, &s[i + 1].0));
         }
         let b = board(None);
         assert_eq!(b.len(), 20);
-        assert_eq!((b[0].clone(), b[19].clone()), (("p19".to_string(), 49), ("p0".to_string(), 30)));
+        assert_eq!((b[0].clone(), b[19].clone()), (("p19".to_string(), s[20].1 as u64), ("p0".to_string(), s[1].1 as u64)));
         assert!(b.windows(2).all(|w| w[0].1 >= w[1].1));
         // a full board: a newcomer must beat the lowest, a tie is not enough
-        assert!(!claim("late", 1, 100, 30));
-        assert!(!claim("late", 1, 101, 5));
+        assert!(!claim("late", 1, 100, &s[1].0));
+        assert!(!claim("late", 1, 101, &s[0].0));
         assert_eq!(board(None), b);
-        assert!(claim("late", 1, 102, 40));
+        assert!(claim("late", 1, 102, &s[10].0));
         let b = board(None);
         assert_eq!(b.len(), 20);
         assert!(!b.iter().any(|(a, _)| a == "p0"), "the lowest entry dropped out");
-        assert_eq!(b[19], ("p1".to_string(), 31));
-        // behind the earlier 40, ahead of the 39
+        assert_eq!(b[19], ("p1".to_string(), s[2].1 as u64));
+        // behind the earlier equal score, ahead of the next lower one
         let at = b.iter().position(|(a, _)| a == "late").unwrap();
-        assert_eq!((b[at - 1].clone(), b[at + 1].clone()), (("p10".to_string(), 40), ("p9".to_string(), 39)));
+        assert_eq!((b[at - 1].clone(), b[at + 1].clone()), (("p9".to_string(), s[10].1 as u64), ("p8".to_string(), s[9].1 as u64)));
         // someone on a full board improves in place: still 20, nobody else leaves
-        assert!(claim("p1", 1, 103, 100));
+        assert!(claim("p1", 1, 103, &s[s.len() - 1].0));
         let b = board(None);
-        assert_eq!((b.len(), b[0].clone(), b[19].clone()), (20, ("p1".to_string(), 100), ("p2".to_string(), 32)));
+        assert_eq!((b.len(), b[0].clone(), b[19].clone()), (20, ("p1".to_string(), s[s.len() - 1].1 as u64), ("p2".to_string(), s[3].1 as u64)));
+    }
+
+    #[test]
+    fn twenty_claims_of_a_perfect_score_cannot_lock_the_board() {
+        // the attack on a board that trusts claims: twenty accounts post "100/100" with a game that is not over
+        // (`a_run_cut_short_is_refused`), or with the laziest whole game there is; the contract scores it as it is
+        let idle = ["0n0"; 10].join(".");
+        let idle_score = Contract::replay_run(crisis_seed(1), idle.clone())["score"].as_u64().unwrap();
+        assert!(idle_score < 100);
+        for i in 0..20 {
+            assert!(claim(&format!("sybil{i}"), 1, i as u64, &idle));
+        }
+        assert!(board(None).iter().all(|(_, sc)| *sc == idle_score), "each fake entry holds only the score its moves earn");
+        // any better real game still gets in, at the top
+        let (best, score) = scored(1).pop().unwrap();
+        assert!(score as u64 > idle_score);
+        assert!(claim("honest", 1, 100, &best));
+        assert_eq!(board(None)[0], ("honest".to_string(), score as u64));
     }
 
     #[test]
     fn boards_older_than_7_days_with_entries_are_pruned() {
         // days 1..=9 with a gap at day 5: eight days have entries
         for day in [1u64, 2, 3, 4, 6, 7, 8, 9] {
-            assert!(claim("ann", day, 0, 50));
-            assert!(claim("ben", day, 1, 40));
+            let s = scored(day);
+            assert!(claim("ann", day, 0, &s[s.len() - 1].0));
+            assert!(claim("ben", day, 1, &s[0].0));
         }
         assert_eq!(load::<Vec<u32>>(KEY_RUN_DAYS).unwrap(), [2, 3, 4, 6, 7, 8, 9]);
         assert!(board(Some(1)).is_empty(), "the oldest day is gone");
@@ -1902,7 +2448,7 @@ mod tests {
             assert_eq!(board(Some(day)).len(), 2, "day {day}");
         }
         assert_eq!(Contract::get_runs(Some(2))["today"], json!(9));
-        assert!(claim("ann", 30, 0, 50));
+        assert!(claim("ann", 30, 0, &scored(30)[0].0));
         assert_eq!(load::<Vec<u32>>(KEY_RUN_DAYS).unwrap(), [3, 4, 6, 7, 8, 9, 30]);
         assert!(env::storage_read(&run_day_key(2)).is_none());
     }
@@ -1970,15 +2516,22 @@ mod tests {
         let mut c = setup();
         // this is about the log, not the ceiling: 75 airdrops need a bank without one (as deployed before the rule)
         env::storage_remove(KEY_MAX_SUPPLY);
+        // one newcomer per bank day (no deposits, so no loan yield: the airdrops are the only mints)
         for i in 0..75u64 {
-            ctx(id(&format!("n{i}.near")), i);
+            if i > 0 {
+                ctx(accounts(4), i * 30_000);
+                c.advance_epoch();
+            }
+            let p = price(&c);
+            ctx_paying(id(&format!("n{i}.near")), p);
+            testing_env!(VMContextBuilder::new().predecessor_account_id(id(&format!("n{i}.near"))).attached_deposit(NearToken::from_yoctonear(p)).block_timestamp(i * 30_000 * 1_000_000).build());
             c.airdrop();
         }
         let log = Contract::get_supply_log();
         assert_eq!(log.len(), SUPPLY_LOG_SIZE as usize);
         // oldest first: airdrops 15..74
-        assert_eq!(log[0], json!({"epoch_id": 0, "round": 0, "kind": "mint", "amount": "1000", "memo": "airdrop", "at_ms": 15}));
-        assert_eq!(log[59]["at_ms"], json!(74));
+        assert_eq!(log[0], json!({"epoch_id": 15, "round": 1, "kind": "mint", "amount": "1000", "memo": "airdrop", "at_ms": 15 * 30_000}));
+        assert_eq!(log[59]["at_ms"], json!(74 * 30_000));
         assert!(log.windows(2).all(|w| w[0]["at_ms"].as_u64() < w[1]["at_ms"].as_u64()));
         assert_eq!(load::<u64>(KEY_SUPPLY_COUNT), Some(75));
         // storage stays bounded: 60 slots, whatever the count
@@ -2028,7 +2581,8 @@ mod tests {
     #[test]
     fn state_without_the_new_keys_gives_empty_views() {
         // a state written by the deployed build: the root value and nothing else
-        let c = setup();
+        let mut c = setup();
+        c.accounts.flush();
         env::state_write(&c);
         for key in [KEY_RUN_DAYS, KEY_SUPPLY_COUNT, KEY_STATS, &run_day_key(1)[..], &supply_slot_key(0)[..]] {
             assert!(env::storage_read(key).is_none());
@@ -2041,29 +2595,15 @@ mod tests {
         // the first calls create the side records next to the root state, which still loads as before
         let mut c: Contract = env::state_read().unwrap();
         c.lobby("print".into());
+        c.accounts.flush();
         env::state_write(&c);
-        assert!(Contract::submit_run(crisis_seed(4), "0n0".into(), 1, "run".into()));
+        assert!(Contract::submit_run(crisis_seed(4), scored(4)[0].0.clone())["recorded"].as_bool().unwrap());
         let again: Contract = env::state_read().unwrap();
         assert_eq!(near_sdk::borsh::to_vec(&again).unwrap(), near_sdk::borsh::to_vec(&c).unwrap());
         assert_eq!(Contract::get_supply_log().len(), 1);
-        assert_eq!(board(None), [(accounts(2).to_string(), 1)]);
+        assert_eq!(board(None), [(accounts(2).to_string(), scored(4)[0].1 as u64)]);
     }
 
-    #[test]
-    fn migrate_keeps_the_v1_state() {
-        let mut c = setup();
-        ctx(accounts(2), 0);
-        c.deposit(U128(4000));
-        let v1 = ContractV1 { bank: c.bank.clone(), epoch_ms: c.epoch_ms, last_epoch_ms: c.last_epoch_ms, chair_signer: Some("ab".repeat(32)), chair_model: "m".into() };
-        env::state_write(&v1);
-        ctx(accounts(0), 0);
-        let m = Contract::migrate();
-        assert_eq!(m.bank.reserve, 4000);
-        assert_eq!(m.bank.supply, c.bank.supply);
-        assert_eq!(m.chair_signer, Some("ab".repeat(32)));
-        assert_eq!(m.chair_model, "m");
-        assert_eq!(m.chair_prompt, None);
-    }
 
     #[test]
     fn answer_parsing_edge_cases() {
@@ -2125,16 +2665,16 @@ mod tests {
         c.deposit(U128(5000));
         ctx(accounts(4), 30_000);
         c.advance_epoch();
-        assert!(c.bank.value_of(accounts(2).as_str()) > 5000, "the new day added interest to the deposit");
+        assert!(c.get_account(accounts(2))["deposit_value"].as_str().unwrap().parse::<u128>().unwrap() > 5000, "the new day added interest to the deposit");
         ctx(accounts(2), 30_000);
         c.withdraw_all();
-        assert!(c.bank.accounts[accounts(2).as_str()].wallet <= 5000, "the early-withdrawal fee took the day's interest back");
+        assert!(acc(&c, accounts(2).as_str()).wallet <= 5000, "the early-withdrawal fee took the day's interest back");
         let evs = events();
         let fee = named(&evs, "lemon-bank", "early_withdrawal_fee");
         assert_eq!(fee.len(), 1);
         let burns = named(&evs, "nep141", "ft_burn");
         assert!(burns.iter().any(|b| b["data"][0]["memo"] == "early withdrawal fee"));
-        assert_eq!(c.bank.supply, c.bank.sum_wallets() + c.bank.reserve + c.bank.loans);
+        conserved(&c);
     }
 
     #[test]
@@ -2150,7 +2690,7 @@ mod tests {
         c.advance_epoch();
         ctx(accounts(2), 60_000);
         c.withdraw(U128(1000));
-        assert_eq!(c.bank.accounts[accounts(2).as_str()].wallet, 1000, "no fee after a full bank day");
+        assert_eq!(acc(&c, accounts(2).as_str()).wallet, 1000, "no fee after a full bank day");
         assert!(named(&events(), "lemon-bank", "early_withdrawal_fee").is_empty());
     }
 
@@ -2160,7 +2700,7 @@ mod tests {
         ctx(accounts(2), 0);
         c.deposit(U128(5000));
         c.withdraw_all();
-        assert_eq!(c.bank.accounts[accounts(2).as_str()].wallet, 5000, "no interest was added, so nothing to pay back");
+        assert_eq!(acc(&c, accounts(2).as_str()).wallet, 5000, "no interest was added, so nothing to pay back");
     }
 
     #[test]
@@ -2172,38 +2712,178 @@ mod tests {
         assert_eq!(early_withdrawal_fee(10, 20_000), 10);
     }
 
-    #[test]
-    fn the_bank_holds_at_most_max_accounts() {
+    fn fee_events() -> Vec<Value> {
+        named(&events(), "lemon-bank", "early_withdrawal_fee").into_iter().map(|e| e["data"][0].clone()).collect()
+    }
+
+    /// A bank where accounts(2) deposited 4,990 on day 0 and the bank is now on day 1 (the deposit got a day's interest).
+    fn deposited_yesterday() -> Contract {
         let mut c = setup();
-        let start = c.bank.order.len();
-        for i in start..MAX_ACCOUNTS {
-            ctx_paying(accounts(0), price());
-            c.storage_deposit(Some(id(&format!("a{i}.testnet"))), None);
-        }
-        assert_eq!(c.bank.order.len(), MAX_ACCOUNTS);
-        ctx_paying(accounts(0), price());
-        let full = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.storage_deposit(Some(id("one-more.testnet")), None)));
-        assert!(full.is_err(), "a registration past the cap is refused");
-        ctx(id("newcomer.testnet"), 0);
-        let drop = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.airdrop()));
-        assert!(drop.is_err(), "so is an airdrop that would create an account");
-        assert_eq!(c.bank.order.len(), MAX_ACCOUNTS);
+        ctx(accounts(3), 0);
+        c.deposit(U128(5000));
+        ctx(accounts(2), 0);
+        c.deposit(U128(4990));
+        ctx(accounts(4), 30_000);
+        c.advance_epoch();
+        c
     }
 
     #[test]
-    fn the_contract_account_sets_the_bank_day_length() {
-        let mut c = setup();
-        ctx(accounts(0), 0);
-        c.set_epoch_seconds(3300);
-        assert_eq!(c.get_state()["epoch_ms"], json!(3_300_000));
-        let long = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.set_epoch_seconds(90_000)));
-        assert!(long.is_err());
-        // `#[private]` (only the contract account) is enforced by near-sdk's exported wrapper, which unit tests do not
-        // go through; scripts/testnet/upgrade.mjs checks it on chain after the upgrade.
-        ctx(accounts(4), 3_299_999);
-        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.advance_epoch())).is_err(), "the day is 55 minutes now");
-        ctx(accounts(4), 3_300_000);
-        c.advance_epoch();
-        assert_eq!(c.bank.epoch, 1);
+    fn a_dust_deposit_does_not_wave_the_fee() {
+        // the reviewer's case: 4,990 in, a new bank day, 2 more in, 1,000 out
+        let mut c = deposited_yesterday();
+        ctx(accounts(2), 30_000);
+        c.deposit(U128(2));
+        c.withdraw(U128(1000));
+        let f = fee_events();
+        assert_eq!(f.len(), 1, "the fee is charged");
+        // the 2 deposited today leave first; the other 998 were deposited yesterday and pay the day's 40 bps
+        assert_eq!(f[0]["fresh"], "998");
+        assert_eq!(f[0]["fee"], u(early_withdrawal_fee(998, 40)));
+        conserved(&c);
     }
+
+    #[test]
+    fn dust_deposits_and_split_withdrawals_change_nothing() {
+        // the same money taken out three ways ends with the same wallet (split withdrawals can only round the fee up)
+        let plain = {
+            let mut c = deposited_yesterday();
+            ctx(accounts(2), 30_000);
+            c.withdraw_all();
+            acc(&c, accounts(2).as_str()).wallet
+        };
+        let with_dust = {
+            let mut c = deposited_yesterday();
+            ctx(accounts(2), 30_000);
+            c.deposit(U128(2));
+            c.withdraw_all();
+            acc(&c, accounts(2).as_str()).wallet
+        };
+        let (split, calls) = {
+            let mut c = deposited_yesterday();
+            ctx(accounts(2), 30_000);
+            for _ in 0..5 { c.deposit(U128(2)); }
+            let mut n = 5;
+            while c.get_account(accounts(2))["deposit_value"] != "0" {
+                c.withdraw(U128(700));
+                n += 1;
+            }
+            (acc(&c, accounts(2).as_str()).wallet, n)
+        };
+        assert!(plain < 10 + 4990 + 4990 * 40 / 10_000, "the fee took the interest back");
+        // a dust deposit buys whole shares only (rounding down), so it can cost a coin, never gain one
+        assert!(with_dust <= plain && plain - with_dust <= 1, "a dust deposit before the withdrawal changes nothing: {with_dust} vs {plain}");
+        assert!(split <= plain, "dust and splitting never lower the fee: {split} vs {plain}");
+        // each call rounds once against the caller (whole shares bought, shares burned and the fee rounded up)
+        assert!(plain - split <= calls, "splitting costs at most a coin per call: {split} vs {plain} after {calls} calls");
+    }
+
+    #[test]
+    fn only_yesterdays_money_pays_the_fee() {
+        // 4,000 that stayed two days, 100 added yesterday: taking 1,000 out today charges only the 100
+        let mut c = setup();
+        ctx(accounts(3), 0);
+        c.deposit(U128(5000));
+        ctx(accounts(2), 0);
+        c.deposit(U128(4000));
+        ctx(accounts(4), 30_000);
+        c.advance_epoch();
+        ctx(accounts(4), 60_000);
+        c.advance_epoch();
+        ctx(accounts(2), 60_000);
+        c.deposit(U128(100));
+        assert_eq!(c.get_account(accounts(2))["early_fee_now"], false, "deposited today: no interest yet, no fee");
+        let free: u128 = c.get_account(accounts(2))["fee_free_now"].as_str().unwrap().parse().unwrap();
+        assert!((99..=100).contains(&free), "today's 100 can come out without the fee: {free}");
+        ctx(accounts(4), 90_000);
+        c.advance_epoch();
+        let view = c.get_account(accounts(2));
+        assert_eq!(view["early_fee_now"], true);
+        let on: u128 = view["early_fee_on"].as_str().unwrap().parse().unwrap();
+        assert!((100..=101).contains(&on), "yesterday's 100 with a day's interest: {on}");
+        ctx(accounts(2), 90_000);
+        c.withdraw(U128(1000));
+        let f = fee_events();
+        assert_eq!(f.len(), 1);
+        let fresh: u128 = f[0]["fresh"].as_str().unwrap().parse().unwrap();
+        assert!((99..=101).contains(&fresh), "only the 100 deposited yesterday pays: {fresh}");
+        assert_eq!(c.get_account(accounts(2))["early_fee_now"], false, "yesterday's money is gone, the rest is free");
+        ctx(accounts(2), 90_000);
+        c.withdraw(U128(1000));
+        assert!(fee_events().is_empty(), "the next withdrawal is older money");
+        conserved(&c);
+    }
+
+    #[test]
+    fn no_mix_of_dust_deposits_and_split_withdrawals_profits_from_a_day_not_stayed() {
+        // 100 random cases: a rate the chair set (0..300 bps), money in on day D, then on day D+1 any order of dust
+        // deposits and partial withdrawals until nothing is left. The account must never end above where it began;
+        // the same money left a full day longer keeps its interest. Each case runs in its own thread, so each starts
+        // from an empty mocked storage.
+        let kept: usize = (0..100u64).map(|case| std::thread::spawn(move || fee_case(case)).join().expect("a case failed")).filter(|k| *k).count();
+        assert!(kept > 8, "money that stayed a full day kept its interest in {kept} cases");
+    }
+
+    /// One case of the test above; true if the money stayed a full day and came out with interest.
+    fn fee_case(case: u64) -> bool {
+        let mut seed = 0x2545_f491_4f6c_dd1du64 ^ (case + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        let mut rnd = |n: u64| { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; seed % n };
+        let mut c = setup();
+        ctx(accounts(3), 0);
+        c.deposit(U128(5000));
+        // the chair moves the rate towards a random target, 75 bps a day at most
+        let target = rnd(301) as u32;
+        let mut rate = 40u32;
+        let mut t = 0u64;
+        while rate != target {
+            rate = if target > rate { (rate + 75).min(target) } else { rate.saturating_sub(75).max(target) };
+            ctx(accounts(1), t);
+            c.set_policy(rate, 200, U128(0), U128(0), "calm".into(), "".into(), "".into());
+            t += 30_000;
+            ctx(accounts(4), t);
+            c.advance_epoch();
+        }
+        let start = acc(&c, accounts(2).as_str()).wallet;
+        let x = 500 + rnd(4000) as u128;
+        ctx(accounts(2), t);
+        c.deposit(U128(x));
+        t += 30_000;
+        ctx(accounts(4), t);
+        c.advance_epoch();
+        let stay = rnd(4) == 0; // now and then the money stays a full bank day more
+        if stay {
+            t += 30_000;
+            ctx(accounts(4), t);
+            c.advance_epoch();
+        }
+        ctx(accounts(2), t);
+        for _ in 0..rnd(4) { c.deposit(U128(2 + rnd(5) as u128)); }
+        let mut guard = 0;
+        while !c.bank.collapsed {
+            let value: u128 = c.get_account(accounts(2))["deposit_value"].as_str().unwrap().parse().unwrap();
+            if value == 0 { break; }
+            if rnd(3) == 0 && acc(&c, accounts(2).as_str()).wallet > 3 { c.deposit(U128(2)); }
+            c.withdraw(U128(if rnd(2) == 0 { value } else { 1 + rnd(value as u64) as u128 }));
+            guard += 1;
+            assert!(guard < 200, "case {case}: the deposit does not empty");
+        }
+        conserved(&c);
+        if c.bank.collapsed { return false; } // a run broke the bank first: a different story, covered elsewhere
+        let end = acc(&c, accounts(2).as_str()).wallet;
+        if !stay { assert!(end <= start, "case {case} (rate {rate}, deposit {x}): {start} -> {end}, a day's interest collected without staying"); }
+        stay && rate > 0 && end > start
+    }
+
+    #[test]
+    fn fresh_shares_move_one_day_at_a_time() {
+        let mut f = FreshShares { epoch_id: 5, today: 30, yesterday: 7 };
+        assert_eq!(f.on(5), f);
+        assert_eq!(f.on(6), FreshShares { epoch_id: 6, today: 0, yesterday: 30 });
+        assert_eq!(f.on(7), FreshShares { epoch_id: 7, today: 0, yesterday: 0 });
+        assert_eq!(f.take(32), 2, "today's 30 first, then 2 of yesterday's");
+        assert_eq!(f, FreshShares { epoch_id: 5, today: 0, yesterday: 5 });
+        assert_eq!(f.take(100), 5, "older shares pay nothing");
+    }
+
+
 }

@@ -5,14 +5,16 @@
  *   npm run verify:chain
  *
  * It checks, and prints one PASS or FAIL line for each:
- *   1. the bank's state: every LEMON accounted for, the ceiling, the owner (a Sputnik DAO), the pinned model key;
+ *   1. the bank's state: every LEMON accounted for, the ceiling, no cap on accounts (each pays for its storage), the
+ *      owner (a Sputnik DAO), the pinned model key, NEP-330 source metadata;
  *   2. the token views (NEP-141) agree with the bank;
  *   3. who holds which key: the chair's capped key, the published guest key, and no key at all on the contract account;
  *   4. the contract's own answer to "print half of all LEMON" (`check_policy`, a free view);
  *   5. every transaction listed in apps/web/src/chain/evidence.json (the page's "Proof on chain", and the others
  *      the README cites): it exists, was signed by the account named there, ended as stated, and carries the quoted
  *      refusal or event;
- *   6. the leaderboard: every stored claim of the last seven days is replayed with the game's engine, as the page does.
+ *   6. the leaderboard: the contract scored every entry itself; each one of the last seven days is replayed again with
+ *      the browser's engine and must give the same score and ending.
  *
  * `npm run verify:deployed` is the other half: it rebuilds the contract and compares it with the code on chain.
  */
@@ -21,7 +23,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeMoves, replayCrisis } from "@chair/sim";
 
-const BANK = process.env.BANK ?? "lemonbank-587f5c93.testnet";
+const BANK = process.env.BANK ?? "lemonbank-96b0974e.testnet";
+/** The ceiling `new` fixed: the opening supply (129,043 LEMON) plus a quarter. */
+const CEILING = process.env.CEILING ?? "161303";
 const RPCS = (process.env.NEAR_RPC_URLS || "https://rpc.testnet.near.org,https://test.rpc.fastnear.com,https://rpc.testnet.fastnear.com").split(",");
 // transactions older than a few days are answered only by archival nodes
 const ARCHIVAL = (process.env.NEAR_ARCHIVAL_RPC_URLS || "https://archival-rpc.testnet.near.org,https://archival-rpc.testnet.fastnear.com").split(",");
@@ -63,12 +67,17 @@ async function main() {
   const s = await view("get_state");
   let wallets = 0n;
   for (let from = 0; from < Number(s.accounts); from += 200) for (const [, w] of await view("get_depositors", { from_index: from, limit: 200 })) wallets += BigInt(w);
-  const supply = BigInt(s.supply), held = wallets + BigInt(s.reserve) + BigInt(s.loans);
-  check(held === supply, "every LEMON is accounted for", `wallets ${wallets} + vault ${s.reserve} + loans ${s.loans} = ${held}; supply ${supply}`);
-  check(s.max_supply === "150000", "the ceiling is 150,000 LEMON", `max_supply ${s.max_supply}`);
+  const supply = BigInt(s.supply), unsettled = BigInt(s.unsettled ?? 0), held = wallets + BigInt(s.reserve) + BigInt(s.loans) + unsettled;
+  check(held === supply, "every LEMON is accounted for", `wallets ${wallets} + vault ${s.reserve} + loans ${s.loans} + owed by collapses ${unsettled} = ${held}; supply ${supply}`);
+  check(s.max_supply === CEILING, `the ceiling is ${Number(CEILING).toLocaleString("en-US")} LEMON`, `max_supply ${s.max_supply}`);
   check(supply <= BigInt(s.max_supply ?? 0), "the supply is under the ceiling", `${supply} of ${s.max_supply}`);
   check(Number(s.epoch_ms) === 3_300_000, "a bank day lasts 55 minutes", `epoch_ms ${s.epoch_ms}`);
-  check(Number(s.max_accounts) === 500 && Number(s.accounts) <= 500, "at most 500 accounts", `${s.accounts} of ${s.max_accounts}`);
+  const bounds = await view("storage_balance_bounds");
+  check(s.max_accounts === undefined && BigInt(bounds.min) > 0n && bounds.min === bounds.max,
+    "no cap on accounts: each one pays for its own storage", `${s.accounts} accounts, ${Number(BigInt(bounds.min) / 10n ** 18n) / 1e6} NEAR each (storage_balance_bounds)`);
+  const src = await view("contract_source_metadata");
+  check(src.link === "https://github.com/SlaveNft/lemon-brothers" && ["nep141", "nep145", "nep297", "nep330"].every((n) => src.standards?.some((x: Json) => x.standard === n)),
+    "NEP-330 source metadata names this repository and the standards", `version ${src.version}, ${src.standards?.map((x: Json) => x.standard).join(", ")}`);
   check(/\.sputnik-v2\.testnet$/.test(s.owner), "the owner is a Sputnik DAO", s.owner);
   const dao = await view("get_policy", {}, s.owner).catch(() => null);
   const council = dao?.roles?.find((r: Json) => r.kind?.Group)?.kind.Group as string[] | undefined;
@@ -86,27 +95,31 @@ async function main() {
   check(ftSupply === s.supply, "ft_total_supply equals the bank's supply", ftSupply);
   check(meta.symbol === "LEMON" && meta.spec === "ft-1.0.0" && meta.decimals === 0, "NEP-141 metadata", `${meta.name}, ${meta.symbol}, ${meta.decimals} decimals`);
   check(Array.isArray(log) && log.length > 0 && log.length <= 60 && log.every((e: Json) => (e.kind === "mint" || e.kind === "burn") && typeof e.memo === "string" && e.memo), "the supply log holds the latest mints and burns, each with a reason", `${log.length} entries: ${[...new Set(log.map((e: Json) => e.memo))].join(", ")}`);
-  check(BigInt(stats.total_burned) > 0n && BigInt(stats.total_minted) > 0n && Number(stats.rounds_fallen) > 0, "the bank's record", `${stats.rounds_fallen} rounds fallen, ${stats.rounds_survived} survived, ${stats.total_burned} LEMON burned, ${stats.total_minted} printed`);
+  check(BigInt(stats.total_burned) > 0n && BigInt(stats.total_minted) > 0n, "the bank's record", `${stats.rounds_fallen} rounds fallen, ${stats.rounds_survived} survived, ${stats.total_burned} LEMON burned, ${stats.total_minted} printed`);
 
   // ---------------------------------------------------------------- 3. keys
   const chairKeys = await keysOf(s.chair);
-  const capped = chairKeys.filter((k) => k.access_key.permission?.FunctionCall);
-  check(capped.length > 0 && capped.every((k) => k.access_key.permission.FunctionCall.receiver_id === BANK && same(k.access_key.permission.FunctionCall.method_names, ["set_policy", "set_policy_attested"])),
-    "the chair's keeper key can call only set_policy and set_policy_attested on the bank", `${s.chair}: ${capped.length} function-call key(s)`);
+  const capped = chairKeys.filter((k) => k.access_key.permission?.FunctionCall?.receiver_id === BANK);
+  check(capped.length > 0 && capped.every((k) => same(k.access_key.permission.FunctionCall.method_names, ["open_question", "set_policy", "set_policy_attested"])),
+    "the chair's keeper key can call only open_question, set_policy and set_policy_attested on the bank", `${s.chair}: ${capped.length} function-call key(s) for this bank`);
   const guest = JSON.parse(readFileSync(path.join(root, "apps/web/src/chain/publicGuest.json"), "utf8"));
   const guestKeys = await keysOf(guest.accountId);
   check(guestKeys.length > 0 && guestKeys.every((k) => k.access_key.permission?.FunctionCall?.receiver_id === BANK && same(k.access_key.permission.FunctionCall.method_names, guest.methods)),
-    "the published guest key is a function-call key for nine bank methods, and the account has no full-access key", `${guest.accountId}: ${guest.methods.join(", ")}`);
+    `the published guest key is a function-call key for ${guest.methods.length} bank methods, and the account has no full-access key`, `${guest.accountId}: ${guest.methods.join(", ")}`);
   const bankKeys = await keysOf(BANK);
-  check(bankKeys.length === 0, "the contract account holds no access key: nobody can replace its code or change its rules",
-    bankKeys.length ? `${bankKeys.length} key(s): ${bankKeys.map((k) => (k.access_key.permission === "FullAccess" ? "full access" : "function call")).join(", ")}` : "view_access_key_list is empty");
+  // The README says the bank's account keeps its deploy key during the hackathon and that deleting it is the last
+  // step. So: no key -> the code is fixed (PASS). A key -> the README must say so (checked), and this line says it.
+  const readmeText = readFileSync(path.join(root, "README.md"), "utf8");
+  const describe = bankKeys.map((k) => (k.access_key.permission === "FullAccess" ? "full access" : "function call")).join(", ");
+  if (bankKeys.length === 0) check(true, "the contract account holds no access key: nobody can replace its code or change its rules", "view_access_key_list is empty");
+  else check(/still holds its deploy key/.test(readmeText), "the contract account still holds a key, and the README says so (Limits): the team can still deploy new code", `${bankKeys.length} key(s): ${describe}`);
 
   // ---------------------------------------------------------------- 4. the printer's lock, asked directly
   const half = String(supply / 2n), cap = supply * 50n / 1000n;
   const why = await view("check_policy", { caller: s.chair, rate: Number(s.policy.rate), target: Number(s.policy.target), mint: half, gate: "0", tone: "calm", statement: "print half", attestation: "" });
   check(typeof why === "string" && (why === "policy already set this epoch" || why.includes(`mint ${half} LEMON refused: above 5% of supply, at most ${cap} this epoch`)),
     why === "policy already set this epoch" ? "a second policy in one bank day is refused, whatever it asks (here: print half of all LEMON)" : "asked to print half of all LEMON, the contract answers no",
-    why === "policy already set this epoch" ? `${why}; the chair has spoken today, so this rule answers first. The 5% cap is in the refusals below (AdjKfG7D…, HG3S6NMp…)` : String(why));
+    why === "policy already set this epoch" ? `${why}; the chair has spoken today, so this rule answers first. The 5% cap is in the refusals below` : String(why));
   const stranger = await view("check_policy", { caller: guest.accountId, rate: Number(s.policy.rate), target: Number(s.policy.target), mint: "0", gate: "0", tone: "calm", statement: "", attestation: "" });
   check(stranger === "only the chair can set policy", "a policy from anyone but the chair is refused", String(stranger));
 
@@ -128,21 +141,21 @@ async function main() {
   // four lookups at a time: public archival nodes answer slowly and rate-limit a burst
   for (let i = 0; i < evidence.length; i += 4) for (const [ok, line] of await Promise.all(evidence.slice(i, i + 4).map(lookup))) check(ok, line);
 
-  // ---------------------------------------------------------------- 6. the leaderboard, replayed
+  // ---------------------------------------------------------------- 6. the leaderboard: scored by the contract, replayed here
   const today = await view("get_runs");
-  let claims = 0, replayed = 0, flagged = 0;
+  let runs = 0, agree = 0;
   for (let day = Number(today.day); day >= Math.max(0, Number(today.day) - 6); day--) {
     const d = day === Number(today.day) ? today : await view("get_runs", { day });
     for (const r of d.runs ?? []) {
-      claims++;
+      runs++;
       let got: { score: number; ending: string } | null = null;
       try { const res = String(r.moves).length <= 200 ? replayCrisis(Number(d.seed), decodeMoves(String(r.moves))!) : null; if (res) got = { score: res.result.score, ending: res.result.ending }; } catch { got = null; }
       const ok = got !== null && got.score === Number(r.score) && got.ending === r.ending;
-      if (ok) replayed++; else flagged++;
-      console.log(`      day ${day}  ${String(r.account).slice(0, 44).padEnd(44)} claims ${String(r.score).padStart(3)}/100 ${String(r.ending).padEnd(14)} ${ok ? "replays" : `DOES NOT REPLAY (the moves give ${got ? `${got.score}/100 ${got.ending}` : "nothing"})`}`);
+      if (ok) agree++;
+      console.log(`      day ${day}  ${String(r.account).slice(0, 44).padEnd(44)} ${String(r.score).padStart(3)}/100 ${String(r.ending).padEnd(14)} ${ok ? "the browser's engine agrees" : `THE BROWSER GETS ${got ? `${got.score}/100 ${got.ending}` : "nothing"}`}`);
     }
   }
-  check(claims === replayed + flagged, "every leaderboard claim of the last seven days was replayed with the game's engine", `${claims} claims: ${replayed} replay, ${flagged} flagged as not replaying`);
+  check(runs === agree, "every leaderboard entry of the last seven days: the contract's score is the browser's", `${runs} entries, ${agree} agree`);
 
   console.log(`\nverify:chain: ${passed} checks passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

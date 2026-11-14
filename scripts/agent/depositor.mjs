@@ -10,6 +10,9 @@
  *   node scripts/agent/depositor.mjs                       dry run: read the bank, ask the model, print the move
  *   node scripts/agent/depositor.mjs --send                make the move (needs the agent's own account and key)
  *   node scripts/agent/depositor.mjs --send --loop 10      once per epoch, ten times
+ *   node scripts/agent/depositor.mjs --new --send --loop 10   no account yet: the testnet faucet makes one for this agent
+ *                                                          (its key is saved in .agent/, never printed; the next --new
+ *                                                          run picks the same account up again), then it plays
  *
  * Environment:
  *   AGENT_ACCOUNT_ID    the agent's testnet account (dry run: any account id, default the bank's public guest)
@@ -19,15 +22,38 @@
  *   LLM_API_KEY         its key (falls back to NEAR_AI_API_KEY)
  *   LLM_MODEL           default Qwen/Qwen3.6-35B-A3B-FP8
  *   AGENT_CHARACTER     one line of temperament, e.g. "nervous, distrusts officials"
- *   BANK_CONTRACT       default lemonbank-587f5c93.testnet; NEAR_RPC_URL default https://rpc.testnet.fastnear.com
+ *   BANK_CONTRACT       default lemonbank-96b0974e.testnet; NEAR_RPC_URL default https://rpc.testnet.fastnear.com
  *
  * What the contract lets a depositor do (and so this agent): airdrop (1,000 test LEMON once), deposit, withdraw,
  * withdraw_all, lobby (a public sentence, 10 LEMON), rumor, insure, advance_epoch. It cannot print, set policy or
  * touch another account. Test tokens only.
  */
 const args = process.argv.slice(2), SEND = args.includes("--send");
+// --new: a testnet account of the agent's own, made by the public faucet (helper.testnet.near.org), remembered in
+// .agent/<account>.json so that a second run continues with the same depositor. Only a model key is needed.
+if (args.includes("--new") && !process.env.AGENT_ACCOUNT_ID) {
+  const { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } = await import("node:fs");
+  const dir = ".agent";
+  const saved = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : [];
+  let me;
+  if (saved.length) me = JSON.parse(readFileSync(`${dir}/${saved[0]}`, "utf8"));
+  else {
+    const { KeyPair } = await import("near-api-js");
+    for (let i = 0; i < 5 && !me; i++) {
+      const id = `lemon-agent-${Math.random().toString(16).slice(2, 10)}.testnet`, kp = KeyPair.fromRandom("ed25519");
+      const r = await fetch(process.env.NEAR_HELPER_URL ?? "https://helper.testnet.near.org/account", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ newAccountId: id, newAccountPublicKey: kp.getPublicKey().toString() }), signal: AbortSignal.timeout(30_000) });
+      if (r.ok) { me = { accountId: id, secretKey: kp.toString() }; mkdirSync(dir, { recursive: true }); writeFileSync(`${dir}/${id}.json`, JSON.stringify(me, null, 2), { mode: 0o600 }); }
+      else if (!/exist/i.test(await r.text())) break;
+    }
+    if (!me) throw new Error("the testnet faucet would not make an account right now: try again later, or pass AGENT_ACCOUNT_ID and AGENT_PRIVATE_KEY");
+    console.log(`new testnet account for this agent: ${me.accountId} (key saved in .agent/, never printed)`);
+  }
+  process.env.AGENT_ACCOUNT_ID = me.accountId;
+  process.env.AGENT_PRIVATE_KEY = me.secretKey;
+}
 const LOOP = args.includes("--loop") ? Math.max(1, Math.min(100, Number(args[args.indexOf("--loop") + 1]) || 1)) : 1;
-const BANK = process.env.BANK_CONTRACT ?? "lemonbank-587f5c93.testnet";
+const BANK = process.env.BANK_CONTRACT ?? "lemonbank-96b0974e.testnet";
 const RPC = process.env.NEAR_RPC_URL ?? "https://rpc.testnet.fastnear.com";
 const ME = process.env.AGENT_ACCOUNT_ID ?? `guest.${BANK}`;
 const LLM = { url: (process.env.LLM_BASE_URL ?? "https://cloud-api.near.ai/v1").replace(/\/$/, ""), key: process.env.LLM_API_KEY ?? process.env.NEAR_AI_API_KEY, model: process.env.LLM_MODEL ?? "Qwen/Qwen3.6-35B-A3B-FP8" };
@@ -81,10 +107,10 @@ async function act(move, s, a) {
   if (!process.env.AGENT_PRIVATE_KEY || !process.env.AGENT_ACCOUNT_ID) throw new Error("--send needs AGENT_ACCOUNT_ID and AGENT_PRIVATE_KEY");
   const me = new Account(ME, new JsonRpcProvider({ url: RPC }), KeyPairSigner.fromSecretKey(process.env.AGENT_PRIVATE_KEY));
   const txs = [];
-  const call = async (method, argsObj) => {
+  const call = async (method, argsObj, deposit = 0n) => {
     let hash = null, refused = null;
     try {
-      const r = await me.signAndSendTransaction({ receiverId: BANK, actions: [actions.functionCall(method, argsObj, 60n * 10n ** 12n, 0n)] });
+      const r = await me.signAndSendTransaction({ receiverId: BANK, actions: [actions.functionCall(method, argsObj, 60n * 10n ** 12n, deposit)] });
       hash = r?.transaction?.hash ?? r?.transaction_outcome?.id ?? null;
       const f = r?.status?.Failure;
       if (f) refused = (f?.ActionError?.kind?.FunctionCallError?.ExecutionError ?? JSON.stringify(f)).replace(/^Smart contract panicked: /, "").slice(0, 200);
@@ -92,7 +118,9 @@ async function act(move, s, a) {
     console.log(`  ${method}: ${refused ? `refused by the bank (${refused})` : "done"}${hash ? ` https://testnet.nearblocks.io/txns/${hash}` : ""}`);
     txs.push({ method, hash, refused });
   };
-  if (!a.airdropped && Number(a.wallet) === 0 && Number(a.deposit_value) === 0) await call("airdrop", {});
+  // a new account pays for its own record with the airdrop (storage_balance_bounds().min; the bank refunds any excess)
+  if (!a.registered) await call("airdrop", {}, BigInt((await view("storage_balance_bounds")).min));
+  else if (!a.airdropped && Number(a.wallet) === 0 && Number(a.deposit_value) === 0) await call("airdrop", {});
   if (move.say && Number(a.wallet) >= 10) await call("lobby", { text: move.say });
   if (move.choice === "run" && Number(a.deposit_value) > 0) await call("withdraw_all", {});
   else if (move.choice === "deposit" && Number(a.wallet) >= 2) await call("deposit", { amount: String(Math.floor(Number(a.wallet) / 2)) });
@@ -101,7 +129,9 @@ async function act(move, s, a) {
 }
 
 for (let i = 0; i < LOOP; i++) {
-  const [s, a] = await Promise.all([view("get_state"), view("get_account", { account_id: ME })]);
+  const [s, raw] = await Promise.all([view("get_state"), view("get_account", { account_id: ME })]);
+  // null = the bank has no record for this account yet (it registers with its first airdrop)
+  const a = raw ? { ...raw, registered: true } : { wallet: "0", deposit_value: "0", airdropped: false, registered: false };
   console.log(`${BANK}: round ${s.round + 1} epoch ${s.epoch + 1}, vault ${(Number(s.reserve_permille) / 10).toFixed(1)}% of deposits; ${ME}: deposit ${a.deposit_value}, wallet ${a.wallet}`);
   const move = await decide(s, a);
   console.log(`${LLM.model} as "${CHARACTER}": ${move.choice.toUpperCase()}: ${move.why}${move.say ? `\n  ${SEND ? "says" : "would say"}: "${move.say}"` : ""}`);

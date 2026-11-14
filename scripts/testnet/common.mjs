@@ -21,6 +21,8 @@ export const HELPER_URL = process.env.NEAR_HELPER_URL ?? "https://helper.testnet
 export const TGAS = 10n ** 12n;
 export const NEAR = 10n ** 24n;
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** What the chair's keeper key may call on the bank: freeze the day's question, then set the policy. */
+export const CHAIR_METHODS = ["open_question", "set_policy", "set_policy_attested"];
 
 export function saveKey(accountId, secretKey, publicKey, label = "full") {
   mkdirSync(STATE_DIR, { recursive: true });
@@ -40,13 +42,15 @@ export function account(accountId, label = "full") {
   return new Account(accountId, PROVIDER, KeyPairSigner.fromSecretKey(loadKey(accountId, label).secret_key));
 }
 
+/** The deployment the scripts act on: .testnet/deploy.json, or another file named by LEMON_DEPLOY (e.g. deploy-v2.json). */
+export const STATE_FILE = process.env.LEMON_DEPLOY ?? "deploy.json";
 export function readState() {
-  const f = path.join(STATE_DIR, "deploy.json");
+  const f = path.join(STATE_DIR, STATE_FILE);
   return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
 }
 export function writeState(s) {
   mkdirSync(STATE_DIR, { recursive: true });
-  writeFileSync(path.join(STATE_DIR, "deploy.json"), JSON.stringify(s, null, 2));
+  writeFileSync(path.join(STATE_DIR, STATE_FILE), JSON.stringify(s, null, 2));
 }
 
 export async function retry(fn, label, tries = 5) {
@@ -87,7 +91,7 @@ function withTimeout(p, ms, what) {
 }
 
 // the network refused the transaction before it could land (the same signed bytes will never land)
-const REFUSED = /requires full access|InvalidTx|MethodNameMismatch|ReceiverMismatch|InvalidAccessKey|NotEnoughAllowance|RequiresFullAccess|NotEnoughBalance|does not allow method|AccessKeyDoesNotExist|does not exist while viewing|Expired/i;
+const REFUSED = /requires full access|InvalidTx|MethodNameMismatch|ReceiverMismatch|InvalidAccessKey|NotEnoughAllowance|RequiresFullAccess|NotEnoughBalance|Not enough balance|does not allow method|AccessKeyDoesNotExist|does not exist while viewing|Expired/i;
 // "InvalidNonce" arrives wrapped in InvalidTxError, so REFUSED matches it too; but after a lost response it usually
 // means an earlier broadcast of this very transaction landed, so it is never taken as a refusal without a lookup
 const NONCE = /InvalidNonce|invalid nonce|nonce .*(must be|larger|greater|too (small|large))/i;

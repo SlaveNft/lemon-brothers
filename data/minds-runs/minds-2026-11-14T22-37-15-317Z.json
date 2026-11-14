@@ -1,0 +1,1247 @@
+{
+  "seed": 7,
+  "persona": "hawk",
+  "days": 8,
+  "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+  "depositors": [
+    {
+      "id": "agent-03",
+      "name": "Ava Park",
+      "character": "nervous by nature; you take the chair's words with some doubt; you keep an eye on what your neighbours do"
+    },
+    {
+      "id": "agent-15",
+      "name": "Sara Ferrar",
+      "character": "hard to scare; you take the chair's words with some doubt; rumours and what your neighbours do sway you easily"
+    },
+    {
+      "id": "agent-27",
+      "name": "Zoe Ferrar",
+      "character": "neither brave nor timid; you take the chair's words with some doubt; you make up your own mind whatever the neighbours do"
+    },
+    {
+      "id": "agent-39",
+      "name": "Aria Silva",
+      "character": "hard to scare; you take the chair's words with some doubt; rumours and what your neighbours do sway you easily"
+    },
+    {
+      "id": "agent-51",
+      "name": "Lena Reyes",
+      "character": "neither brave nor timid; you do not trust what officials say; you keep an eye on what your neighbours do"
+    },
+    {
+      "id": "agent-04",
+      "name": "Noah Ferrar",
+      "character": "neither brave nor timid; you tend to believe the bank's chair; you keep an eye on what your neighbours do"
+    },
+    {
+      "id": "agent-16",
+      "name": "Ezra Kowal",
+      "character": "hard to scare; you take the chair's words with some doubt; you make up your own mind whatever the neighbours do"
+    },
+    {
+      "id": "agent-28",
+      "name": "Omar Reyes",
+      "character": "neither brave nor timid; you take the chair's words with some doubt; rumours and what your neighbours do sway you easily"
+    },
+    {
+      "id": "agent-40",
+      "name": "Jude Lund",
+      "character": "hard to scare; you do not trust what officials say; rumours and what your neighbours do sway you easily"
+    },
+    {
+      "id": "agent-52",
+      "name": "Ravi Brandt",
+      "character": "hard to scare; you tend to believe the bank's chair; you make up your own mind whatever the neighbours do"
+    },
+    {
+      "id": "agent-05",
+      "name": "Iris Reyes",
+      "character": "neither brave nor timid; you tend to believe the bank's chair; you make up your own mind whatever the neighbours do"
+    },
+    {
+      "id": "agent-17",
+      "name": "Lola Lund",
+      "character": "hard to scare; you tend to believe the bank's chair; you keep an eye on what your neighbours do"
+    }
+  ],
+  "paidCompletions": 96,
+  "log": [
+    {
+      "day": 0,
+      "round": 0,
+      "epoch": 0,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.40% stands. Discipline is a policy."
+      },
+      "vault": 131833,
+      "owed": 131833,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-03",
+          "name": "Ava Park",
+          "choice": "hold",
+          "why": "The vault is fully backed and the chair seems confident, so I'll stay put to earn the interest without risking a bank run.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 2468
+        },
+        {
+          "id": "agent-15",
+          "name": "Sara Ferrar",
+          "choice": "hold",
+          "why": "The vault is fully backed and no one has fled yet, so panic is unnecessary.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 3418
+        },
+        {
+          "id": "agent-27",
+          "name": "Zoe Ferrar",
+          "choice": "hold",
+          "why": "The vault is fully funded and the chair's calm tone suggests stability, so I'll keep my money safe for now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 1730
+        },
+        {
+          "id": "agent-39",
+          "name": "Aria Silva",
+          "choice": "hold",
+          "why": "The vault is fully backed and no friends have run, so panic seems unnecessary.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 2314
+        },
+        {
+          "id": "agent-51",
+          "name": "Lena Reyes",
+          "choice": "hold",
+          "why": "The vault is fully funded and no one has run yet, so the risk of collapse is currently low despite my distrust.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 714
+        },
+        {
+          "id": "agent-04",
+          "name": "Noah Ferrar",
+          "choice": "hold",
+          "why": "The vault is fully backed and the chair's calm tone suggests stability, so I will wait to see if others panic before acting.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 485
+        },
+        {
+          "id": "agent-16",
+          "name": "Ezra Kowal",
+          "choice": "hold",
+          "why": "The bank is fully backed with cash and the chair's calm tone suggests stability, so there is no immediate incentive to withdraw.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 2046
+        },
+        {
+          "id": "agent-28",
+          "name": "Omar Reyes",
+          "choice": "hold",
+          "why": "The chair is calm and no one has run yet, so I should wait to see if others panic before risking my money.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 1380
+        },
+        {
+          "id": "agent-40",
+          "name": "Jude Lund",
+          "choice": "deposit",
+          "why": "The vault is fully backed and no one has run yet, so the risk is low and the interest rate is a free lunch.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 2621
+        },
+        {
+          "id": "agent-52",
+          "name": "Ravi Brandt",
+          "choice": "deposit",
+          "why": "The chair is reliable and the vault is fully funded, so I will secure the interest by depositing half my wallet.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 1110
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The bank is fully solvent, the chair is calm, and I prefer to let my money earn the deposit rate while the vault remains safe.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 2404
+        },
+        {
+          "id": "agent-17",
+          "name": "Lola Lund",
+          "choice": "deposit",
+          "why": "The vault is fully backed and the chair is trustworthy, so I should maximize gains while it's safe.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 0,
+          "depositBefore": 2327
+        }
+      ]
+    },
+    {
+      "day": 1,
+      "round": 0,
+      "epoch": 1,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 45220,
+      "owed": 129202,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-03",
+          "name": "Ava Park",
+          "choice": "hold",
+          "why": "The vault is still healthy and my friends haven't run, so panicking now would be foolish.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 2481
+        },
+        {
+          "id": "agent-15",
+          "name": "Sara Ferrar",
+          "choice": "hold",
+          "why": "The vault has 34.9% cash which is plenty to cover a small run, and since my friends are staying calm I trust they know something I don't.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 3436
+        },
+        {
+          "id": "agent-27",
+          "name": "Zoe Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy and my friends are staying, so there is no immediate reason to panic or lose liquidity.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 1739
+        },
+        {
+          "id": "agent-39",
+          "name": "Aria Silva",
+          "choice": "hold",
+          "why": "The chair sounds confident and no one is running yet, so I'll wait to see if my neighbors panic before I move.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 2326
+        },
+        {
+          "id": "agent-51",
+          "name": "Lena Reyes",
+          "choice": "hold",
+          "why": "The vault has plenty of cash (35%) and only 3% left yesterday, so I will wait to see if my neighbors panic before risking a run.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 717
+        },
+        {
+          "id": "agent-04",
+          "name": "Noah Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy and my friends are staying, so I see no immediate reason to risk being last in line.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 487
+        },
+        {
+          "id": "agent-16",
+          "name": "Ezra Kowal",
+          "choice": "hold",
+          "why": "The bank is solvent with high cash reserves and low withdrawal pressure, so I'll stay put to earn the interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 2057
+        },
+        {
+          "id": "agent-28",
+          "name": "Omar Reyes",
+          "choice": "hold",
+          "why": "The vault is healthy and my friends are staying, so I shouldn't risk losing my deposit by running early.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 1387
+        },
+        {
+          "id": "agent-40",
+          "name": "Jude Lund",
+          "choice": "hold",
+          "why": "The official statement is likely a lie to prevent a run, but since no friends ran and there are no rumors, the panic isn't contagious yet.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 3035
+        },
+        {
+          "id": "agent-52",
+          "name": "Ravi Brandt",
+          "choice": "hold",
+          "why": "The vault is healthy at nearly 35% and the bank chair is calm, so there is no reason to panic or miss out on the interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 1420
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The vault is well-stocked and the chair's calm tone suggests stability, so I will maintain my position to earn the interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 2417
+        },
+        {
+          "id": "agent-17",
+          "name": "Lola Lund",
+          "choice": "hold",
+          "why": "The vault is healthy and my friends are stable, so panicking would cost me interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 1,
+          "depositBefore": 2394
+        }
+      ]
+    },
+    {
+      "day": 2,
+      "round": 0,
+      "epoch": 2,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 44955,
+      "owed": 128445,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-03",
+          "name": "Ava Park",
+          "choice": "hold",
+          "why": "The vault is still very healthy at nearly 35% and no one has run yet, so I don't want to risk losing my deposit by leaving too early.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 2495
+        },
+        {
+          "id": "agent-15",
+          "name": "Sara Ferrar",
+          "choice": "hold",
+          "why": "The chair sounds confident and my friends are staying put, so I won't be the first to panic.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 3455
+        },
+        {
+          "id": "agent-27",
+          "name": "Zoe Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy and friends are stable, so there is no immediate pressure to flee.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 1749
+        },
+        {
+          "id": "agent-39",
+          "name": "Aria Silva",
+          "choice": "hold",
+          "why": "The chair says the vault is healthy and my friends aren't running, so I'll trust the status quo for now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 2339
+        },
+        {
+          "id": "agent-51",
+          "name": "Lena Reyes",
+          "choice": "hold",
+          "why": "The vault is healthy and no one is panicking yet, so I will wait to see if others make a mistake.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 721
+        },
+        {
+          "id": "agent-04",
+          "name": "Noah Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy and the chair is calm, so I will stick with the crowd and keep my money safe for now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 490
+        },
+        {
+          "id": "agent-16",
+          "name": "Ezra Kowal",
+          "choice": "hold",
+          "why": "The vault is healthy, the chair is calm, and my friends are staying, so I see no reason to panic or lose liquidity.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 2068
+        },
+        {
+          "id": "agent-28",
+          "name": "Omar Reyes",
+          "choice": "hold",
+          "why": "The Chair claims the bank is healthy and my friends are staying put, so I see no reason to panic yet.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 1395
+        },
+        {
+          "id": "agent-40",
+          "name": "Jude Lund",
+          "choice": "hold",
+          "why": "The official calm tone and my friends' inaction suggest the vault is still safe despite the low reserve.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 3052
+        },
+        {
+          "id": "agent-52",
+          "name": "Ravi Brandt",
+          "choice": "hold",
+          "why": "The chair is reliable and the vault is healthy, so there is no reason to panic or miss out on the deposit rate.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 1428
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The chair's calm assurance and the high vault ratio suggest stability, and I prefer to keep my money where it is rather than risk losing it by running early.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 2430
+        },
+        {
+          "id": "agent-17",
+          "name": "Lola Lund",
+          "choice": "hold",
+          "why": "The vault is healthy and my friends are staying, so running now would be a foolish loss of potential gains.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 2,
+          "depositBefore": 2407
+        }
+      ]
+    },
+    {
+      "day": 3,
+      "round": 0,
+      "epoch": 3,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 45202,
+      "owed": 129151,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-03",
+          "name": "Ava Park",
+          "choice": "hold",
+          "why": "The vault is nearly half-full and no one has panicked yet, so I shouldn't be the first to lose everything.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 2508
+        },
+        {
+          "id": "agent-15",
+          "name": "Sara Ferrar",
+          "choice": "hold",
+          "why": "The chair is calm, no friends are running, and the vault is healthy, so there is no immediate panic to join.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 3474
+        },
+        {
+          "id": "agent-27",
+          "name": "Zoe Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy, no one is running, and the risk of losing my deposit by leaving early outweighs the small gain from depositing.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 1758
+        },
+        {
+          "id": "agent-39",
+          "name": "Aria Silva",
+          "choice": "hold",
+          "why": "The vault is nearly half full and my neighbors are calm, so panic seems unnecessary right now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 2352
+        },
+        {
+          "id": "agent-51",
+          "name": "Lena Reyes",
+          "choice": "hold",
+          "why": "The vault is well-stocked and the rate is low enough to ignore for now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 725
+        },
+        {
+          "id": "agent-04",
+          "name": "Noah Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy and no one is running, so I will stay to keep my money safe.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 493
+        },
+        {
+          "id": "agent-16",
+          "name": "Ezra Kowal",
+          "choice": "hold",
+          "why": "The vault is healthy and no one has run, so I'll keep my money there for now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 2079
+        },
+        {
+          "id": "agent-28",
+          "name": "Omar Reyes",
+          "choice": "hold",
+          "why": "The vault is healthy and no friends have run, so panic seems unfounded right now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 1402
+        },
+        {
+          "id": "agent-40",
+          "name": "Jude Lund",
+          "choice": "hold",
+          "why": "The official sounds calm and vault health is decent, so I'll trust them until someone else panics.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 3069
+        },
+        {
+          "id": "agent-52",
+          "name": "Ravi Brandt",
+          "choice": "hold",
+          "why": "The vault is healthy, no runs are happening, and I trust the Chair's calm assurance over fear.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 1436
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The vault is healthy, no one is running, and the chair's calm tone suggests stability, so I will keep my money safe for now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 2443
+        },
+        {
+          "id": "agent-17",
+          "name": "Lola Lund",
+          "choice": "deposit",
+          "why": "The vault is healthy and my friends are calm, so I trust the Chair and want to earn the 0.55% interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 3,
+          "depositBefore": 2420
+        }
+      ]
+    },
+    {
+      "day": 4,
+      "round": 0,
+      "epoch": 4,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 45460,
+      "owed": 129888,
+      "ran": 0,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-03",
+          "name": "Ava Park",
+          "choice": "hold",
+          "why": "The vault has plenty of cash and everyone else is staying put, so I don't want to risk losing out on the interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 2522
+        },
+        {
+          "id": "agent-15",
+          "name": "Sara Ferrar",
+          "choice": "hold",
+          "why": "With no friends running and calm official words, the risk seems low enough to keep my money safe for now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 3493
+        },
+        {
+          "id": "agent-27",
+          "name": "Zoe Ferrar",
+          "choice": "hold",
+          "why": "The vault has plenty of cash and no one is panicking, so running now would be unnecessarily risky.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 1768
+        },
+        {
+          "id": "agent-39",
+          "name": "Aria Silva",
+          "choice": "hold",
+          "why": "The vault is still healthy at nearly 35% and my friends haven't run, so I should wait.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 2365
+        },
+        {
+          "id": "agent-51",
+          "name": "Lena Reyes",
+          "choice": "hold",
+          "why": "The vault is sufficiently capitalized at 35% and no one is running yet, so there is no immediate urgency to withdraw.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 729
+        },
+        {
+          "id": "agent-04",
+          "name": "Noah Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy and no one is running, so I stay put to avoid losing my deposit.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 495
+        },
+        {
+          "id": "agent-16",
+          "name": "Ezra Kowal",
+          "choice": "hold",
+          "why": "The vault is healthy, no one is running, and the risk of a sudden collapse is low enough to wait for interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 2091
+        },
+        {
+          "id": "agent-28",
+          "name": "Omar Reyes",
+          "choice": "hold",
+          "why": "The vault has plenty of cash and my friends are staying calm, so running seems unnecessary.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 1410
+        },
+        {
+          "id": "agent-40",
+          "name": "Jude Lund",
+          "choice": "hold",
+          "why": "The vault has plenty of cash and no one is running, so there is no immediate danger.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 3085
+        },
+        {
+          "id": "agent-52",
+          "name": "Ravi Brandt",
+          "choice": "hold",
+          "why": "The bank is solvent with high cash reserves and no signs of panic, so I trust the chair's calm assessment.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 1444
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The vault is healthy and the chair is calm, so there is no reason to panic or change position.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 2457
+        },
+        {
+          "id": "agent-17",
+          "name": "Lola Lund",
+          "choice": "hold",
+          "why": "The vault is healthy, no one is running, and I have almost no cash to deposit anyway.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 4,
+          "depositBefore": 2460
+        }
+      ]
+    },
+    {
+      "day": 5,
+      "round": 0,
+      "epoch": 5,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 44005,
+      "owed": 125730,
+      "ran": 2,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-03",
+          "name": "Ava Park",
+          "choice": "run",
+          "why": "A 35% vault ratio is dangerously low for a system that lends most deposits, and I cannot trust the Chair's calm tone when history suggests panic spreads fast.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 2536
+        },
+        {
+          "id": "agent-15",
+          "name": "Sara Ferrar",
+          "choice": "hold",
+          "why": "The chair says the bank is healthy and my neighbors are staying put, so I won't be the first to panic.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 3513
+        },
+        {
+          "id": "agent-27",
+          "name": "Zoe Ferrar",
+          "choice": "hold",
+          "why": "The vault health is strong and no friends have run, so I see no immediate reason to panic or leave.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 1778
+        },
+        {
+          "id": "agent-39",
+          "name": "Aria Silva",
+          "choice": "hold",
+          "why": "The vault is still healthy at 34.9% and my friends are staying put, so I trust the Chair for now.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 2378
+        },
+        {
+          "id": "agent-51",
+          "name": "Lena Reyes",
+          "choice": "hold",
+          "why": "The vault has plenty of cash and my friends are staying, so running now would be premature and costly.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 733
+        },
+        {
+          "id": "agent-04",
+          "name": "Noah Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy, the chair is calm, and my friends are staying, so running now would be a self-fulfilling panic.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 498
+        },
+        {
+          "id": "agent-16",
+          "name": "Ezra Kowal",
+          "choice": "hold",
+          "why": "The bank has plenty of liquidity and my friends are staying, so there is no immediate reason to panic or miss out on the interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 2102
+        },
+        {
+          "id": "agent-28",
+          "name": "Omar Reyes",
+          "choice": "hold",
+          "why": "The chair claims the vault is healthy and no friends have run, so I should stay put to avoid missing out on potential gains.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 1418
+        },
+        {
+          "id": "agent-40",
+          "name": "Jude Lund",
+          "choice": "run",
+          "why": "The vault holding only 35% of deposits is dangerously low given the daily run rate, and I trust no one's calm words over my own survival.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 3102
+        },
+        {
+          "id": "agent-52",
+          "name": "Ravi Brandt",
+          "choice": "hold",
+          "why": "The bank has ample liquidity and the chair's calm assurance, combined with low withdrawal rates, suggests no immediate risk of insolvency.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 1452
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The bank's liquidity is strong and the chair's calm assurance suggests stability, so I will keep my money there.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 2470
+        },
+        {
+          "id": "agent-17",
+          "name": "Lola Lund",
+          "choice": "hold",
+          "why": "The vault is still well above the danger zone, and my friends are staying put, so panic is unnecessary.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 5,
+          "depositBefore": 2473
+        }
+      ]
+    },
+    {
+      "day": 6,
+      "round": 0,
+      "epoch": 6,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 40854,
+      "owed": 119194,
+      "ran": 3,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-03",
+          "name": "Ava Park",
+          "choice": "hold",
+          "why": "The vault has plenty of cash and my friends aren't panicking, so I'll wait to see if the calm holds.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-15",
+          "name": "Sara Ferrar",
+          "choice": "run",
+          "why": "The vault is dangerously low at 34.2% and yesterday's outflow suggests a panic is brewing that my friends might soon join.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 3532
+        },
+        {
+          "id": "agent-27",
+          "name": "Zoe Ferrar",
+          "choice": "hold",
+          "why": "The vault has plenty of cash left and no one is panicking, so I'll wait to see if the others make a mistake.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 1787
+        },
+        {
+          "id": "agent-39",
+          "name": "Aria Silva",
+          "choice": "hold",
+          "why": "The vault is still healthy at 34.2% and only 5.7% left yesterday, so I trust the chair's calm words over Jude's small exit.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 2391
+        },
+        {
+          "id": "agent-51",
+          "name": "Lena Reyes",
+          "choice": "run",
+          "why": "The vault is critically low at 34.2% and the chair's calm tone feels like a trap to keep me from fleeing before the collapse.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 737
+        },
+        {
+          "id": "agent-04",
+          "name": "Noah Ferrar",
+          "choice": "hold",
+          "why": "The vault is healthy and I trust the chair's calm assurance, so I will wait to see if others run.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 501
+        },
+        {
+          "id": "agent-16",
+          "name": "Ezra Kowal",
+          "choice": "hold",
+          "why": "The vault is still comfortably above the danger zone and the Chair's calm tone suggests stability, so I'll wait to see if the panic actually starts before risking my capital.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 2114
+        },
+        {
+          "id": "agent-28",
+          "name": "Omar Reyes",
+          "choice": "run",
+          "why": "I see Jude leaving and the vault is only 34% full, which feels dangerously low given the history.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 1426
+        },
+        {
+          "id": "agent-40",
+          "name": "Jude Lund",
+          "choice": "hold",
+          "why": "The vault is still healthy and my friends aren't running, so I'll wait to see if the panic spreads.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-52",
+          "name": "Ravi Brandt",
+          "choice": "hold",
+          "why": "The vault is well-funded and the chair's calm assurance aligns with my trust in leadership over neighbourly panic.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 1460
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The chair's calm tone and the high vault ratio suggest stability, so I will trust the institution rather than panic over minor withdrawals.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 2484
+        },
+        {
+          "id": "agent-17",
+          "name": "Lola Lund",
+          "choice": "hold",
+          "why": "The vault has plenty of cash relative to recent withdrawals, and my friends are staying put, so panic is unlikely.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 6,
+          "depositBefore": 2487
+        }
+      ]
+    },
+    {
+      "day": 7,
+      "round": 0,
+      "epoch": 7,
+      "chair": {
+        "tone": "calm",
+        "statement": "The Lemon Brothers vault is in excellent health. Rate 0.55% stands. Discipline is a policy."
+      },
+      "vault": 39014,
+      "owed": 114122,
+      "ran": 2,
+      "fell": false,
+      "moves": [
+        {
+          "id": "agent-03",
+          "name": "Ava Park",
+          "choice": "hold",
+          "why": "With 4089 LEMON in my wallet, I cannot afford to lose even a fraction of it to a potential bank run, especially since a friend has already left and the vault is only 34% liquid. (wanted to run, but has nothing left in the bank)",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-15",
+          "name": "Sara Ferrar",
+          "choice": "hold",
+          "why": "My friends are stable and the vault has plenty of cash, so running now would be a waste of potential interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-27",
+          "name": "Zoe Ferrar",
+          "choice": "hold",
+          "why": "The vault still holds plenty of cash and the chair's calm tone suggests stability, so I'll stay put to earn the interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 1797
+        },
+        {
+          "id": "agent-39",
+          "name": "Aria Silva",
+          "choice": "run",
+          "why": "Omar just fled and the vault is dangerously low at 34%, so I'm taking my money before it's too late.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 2404
+        },
+        {
+          "id": "agent-51",
+          "name": "Lena Reyes",
+          "choice": "hold",
+          "why": "The vault health is stable and no neighbours have panicked, so running now would be an unnecessary loss of potential interest.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-04",
+          "name": "Noah Ferrar",
+          "choice": "hold",
+          "why": "The chair's calm assurance and the fact that my friends haven't run suggest stability, so I'll wait to see if others panic.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 503
+        },
+        {
+          "id": "agent-16",
+          "name": "Ezra Kowal",
+          "choice": "run",
+          "why": "With only 34% cash coverage and a neighbor already fleeing, I cannot risk the vault emptying before I exit.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 2126
+        },
+        {
+          "id": "agent-28",
+          "name": "Omar Reyes",
+          "choice": "hold",
+          "why": "The vault is healthy and friends are stable, so I see no immediate reason to panic or lose money on fees.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-40",
+          "name": "Jude Lund",
+          "choice": "hold",
+          "why": "My friend Lena just left, and I don't trust the bank's calm words over my neighbors' actions. (wanted to run, but has nothing left in the bank)",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 0
+        },
+        {
+          "id": "agent-52",
+          "name": "Ravi Brandt",
+          "choice": "hold",
+          "why": "The chair's calm assurance and high vault ratio suggest the bank is safe, and I prefer to trust the official stance over a single neighbor's exit.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 1468
+        },
+        {
+          "id": "agent-05",
+          "name": "Iris Reyes",
+          "choice": "hold",
+          "why": "The vault is sufficiently healthy and the chair's reassurance aligns with my tendency to trust authority, so I see no urgent reason to withdraw.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 2498
+        },
+        {
+          "id": "agent-17",
+          "name": "Lola Lund",
+          "choice": "hold",
+          "why": "The chair is calm, reserves are high, and my friends are steady, so panic is unnecessary.",
+          "say": "",
+          "model": "Qwen/Qwen3.6-35B-A3B-FP8",
+          "source": "model",
+          "epochId": 7,
+          "depositBefore": 2501
+        }
+      ]
+    }
+  ]
+}

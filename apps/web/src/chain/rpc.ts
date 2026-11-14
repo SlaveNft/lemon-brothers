@@ -5,7 +5,7 @@
  *   ?contract=<account>   read another deployment (default: the Lemon Brothers bank on testnet)
  *   ?rpc=<url>            use one RPC endpoint
  */
-const DEFAULT_CONTRACT = "lemonbank-587f5c93.testnet";
+const DEFAULT_CONTRACT = "lemonbank-96b0974e.testnet";
 // Five public endpoints from four operators (checked 2026-11-13: all answer with CORS open). Each rate-limits per
 // address, so a refused call moves on to the next one.
 const DEFAULT_RPCS = ["https://rpc.testnet.fastnear.com", "https://near-testnet.drpc.org", "https://test.rpc.fastnear.com", "https://near-testnet.gateway.tatum.io", "https://rpc.testnet.near.org"];
@@ -80,4 +80,12 @@ export interface ChainState {
   accounts: number;
   /** The most LEMON that may ever exist; absent or null on a bank whose ceiling has not been set. */
   max_supply?: string | null;
+  /** yoctoNEAR one account's storage costs (`storage_balance_bounds().min`); a newcomer attaches it to `airdrop`. */
+  storage_price?: string;
+  /** Collapses so far, and the LEMON they still owe accounts that have not been touched since. */
+  collapses?: number; unsettled?: string;
+  /** How far the town believes the chair, 0..1000, kept by the contract. */
+  credibility?: number;
+  /** The chair has frozen this bank day's question: speeches and rumours wait for the next bank day. */
+  question_open?: boolean;
 }

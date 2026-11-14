@@ -1,0 +1,32 @@
+{
+  "started": "2026-11-14T22:08:24.258Z",
+  "contract": "lemonbank-96b0974e.testnet",
+  "account": "guest.lemonbank-96b0974e.testnet",
+  "amount": "0",
+  "dust": {
+    "tx": "DYHWdiL8NGjPr1RPW7wEqddrtmhkoegnczSg87idoHnd",
+    "epoch_id": 1,
+    "fee_free_now": "1",
+    "early_fee_on": "5009"
+  },
+  "take": "1000",
+  "deposit": {
+    "resumed": true,
+    "deposit_value": "5009",
+    "epoch_id": 1
+  },
+  "withdraw": {
+    "tx": "5t6KX6ER9tRJQmoubykmnyL2XUvAjkP8NcoKeGDdVQCB",
+    "epoch_id": 1,
+    "rate_bps": "40",
+    "fee": {
+      "account_id": "guest.lemonbank-96b0974e.testnet",
+      "withdrawn": "1000",
+      "fresh": "998",
+      "fee": "4",
+      "rate_bps": "40"
+    },
+    "wallet_before": "8",
+    "wallet_after": "1004"
+  }
+}

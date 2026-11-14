@@ -2,7 +2,9 @@
  * The bank and the $LEMON token as a pure state machine. BigInt integer math, identical to
  * contracts/bank-core (parity vectors from scripts/vectors.ts are replayed by the Rust tests).
  *
- * Invariant after every call: supply == sum(wallets) + reserve + loans.
+ * Invariant after every call: supply == sum(wallets) + reserve + loans + unsettled.
+ * A collapse is settled at once here (every account gets its share in the same call); the contract settles each
+ * account on its next touch instead, which pays exactly the same amounts (contracts/bank-core, `settle`).
  * Functions mutate the state they are given and return an error string instead of throwing, the way the
  * contract rejects a call: on error nothing has changed.
  */
@@ -25,7 +27,7 @@ export interface Account {
 export type BankEvent =
   | { t: "deposit"; who: string; amount: bigint }
   | { t: "withdraw"; who: string; amount: bigint; fireSold: bigint; burned: bigint }
-  | { t: "collapse"; who: string; assets: bigint; liabilities: bigint }
+  | { t: "collapse"; who: string; assets: bigint; liabilities: bigint; insurance: bigint }
   | { t: "settle"; who: string; amount: bigint }
   | { t: "insurance_payout"; who: string; amount: bigint }
   | { t: "policy"; policy: Policy }
@@ -62,9 +64,17 @@ export interface Bank {
   liabilitiesAtCollapse: bigint;
   /** LEMON withdrawn during the current epoch (public; agents read last epoch's value). */
   outflow: bigint;
+  /** Collapses so far. */
+  era: number;
+  /** LEMON owed by collapses and not paid out (here: only the rounding dust of each split). */
+  unsettled: bigint;
+  /** Insurance premiums bought this round. */
+  insuredTotal: bigint;
+  /** Newcomers' airdrops in the current epoch. */
+  airdropsThisEpoch: number;
   speeches: Array<{ who: string; text: string; epochId: number }>;
   rumors: Array<{ who: string; kind: RumorKind; epochId: number }>;
-  /** Accounts in registration order (the contract keeps the same order). */
+  /** Every account (nothing in the rules depends on their order). */
   accounts: Map<string, Account>;
   chair: string;
   owner: string;
@@ -81,6 +91,7 @@ export function newBank(owner: string, chair: string, genesis: Array<[string, bi
     epoch: 0, round: 0, epochId: 0,
     policy: { ...DEFAULT_POLICY, tone: "calm", statement: "", attestation: "" }, policySetEpochId: -1,
     mintedThisRound: 0n, roundStartSupply: 0n, liabilitiesAtCollapse: 0n, outflow: 0n,
+    era: 0, unsettled: 0n, insuredTotal: 0n, airdropsThisEpoch: 0,
     speeches: [], rumors: [], accounts: new Map(), chair, owner, events: [],
   };
   for (const [who, amount] of genesis) { acct(b, who).wallet += amount; b.supply += amount; }
@@ -89,8 +100,7 @@ export function newBank(owner: string, chair: string, genesis: Array<[string, bi
   return b;
 }
 
-/** Get or register an account. Registration order matters (a collapse settles accounts in this order), so only
- *  successful state changes register: the contract does the same. */
+/** Get or register an account. Only successful state changes register: the contract does the same. */
 export function acct(b: Bank, who: string): Account {
   let a = b.accounts.get(who);
   if (!a) {
@@ -118,7 +128,11 @@ const capped = (b: Bank, x: bigint): bigint => { const room = mintRoom(b); retur
 
 export function airdrop(b: Bank, who: string): string | null {
   if (b.accounts.get(who)?.airdropped) return "airdrop already claimed";
-  if (capped(b, BANK.airdrop) < BANK.airdrop) return `airdrop refused: the bank's ceiling of ${b.maxSupply} LEMON is reached; newcomers get coins again once some have burned`;
+  if (b.airdropsThisEpoch >= BANK.airdropsPerEpoch) return `airdrop refused: ${BANK.airdropsPerEpoch} newcomers got coins this bank day already, come back after the next one`;
+  const room = mintRoom(b);
+  const headroom = (b.maxSupply * BANK.airdropHeadroomPermille) / 1000n;
+  if (room !== null && BANK.airdrop + headroom > room) return `airdrop refused: the bank's ceiling of ${b.maxSupply} LEMON is close; newcomers get coins again once some have burned`;
+  b.airdropsThisEpoch += 1;
   const a = acct(b, who);
   a.airdropped = true; a.wallet += BANK.airdrop; b.supply += BANK.airdrop;
   return null;
@@ -168,27 +182,33 @@ export function withdraw(b: Bank, who: string, amount: bigint): string | null {
 
 export const withdrawAll = (b: Bank, who: string) => withdraw(b, who, valueOf(b, who));
 
-/** Every loan is sold at the haircut, the assets are split pro rata over all shares, insurance pays out. */
+/**
+ * Every loan is sold at the haircut; the vault is split pro rata over all shares, and the round's insurance is printed
+ * under the ceiling (a shortfall cuts every payout by the same ratio). Paid out here at once; the contract records the
+ * split and pays each account on its next touch, the same amounts.
+ */
 function collapse(b: Bank, who: string) {
   const liab = liabilities(b);
   const proceeds = (b.loans * (1000n - BANK.haircutPermille)) / 1000n;
-  b.supply -= b.loans - proceeds; b.reserve += proceeds; b.loans = 0n;
+  const burned = b.loans - proceeds;
+  b.supply -= burned; b.reserve += proceeds; b.loans = 0n;
   const assets = b.reserve, total = b.totalShares;
-  b.events.push({ t: "collapse", who, assets, liabilities: liab });
+  const insOwed = b.insuredTotal * BANK.insurePayout;
+  const insPaid = capped(b, insOwed);
+  b.supply += insPaid;
+  b.unsettled += assets + insPaid; b.reserve = 0n;
+  b.era += 1;
+  b.events.push({ t: "collapse", who, assets, liabilities: liab, insurance: insPaid });
   for (const [id, a] of b.accounts) {
-    if (a.shares === 0n) continue;
-    const pay = total === 0n ? 0n : (assets * a.shares) / total;
-    a.wallet += pay; b.reserve -= pay; a.shares = 0n;
-    b.events.push({ t: "settle", who: id, amount: pay });
+    const share = a.shares === 0n || total === 0n ? 0n : (assets * a.shares) / total;
+    const ins = a.insured === 0n || a.insuredRound !== b.round || insOwed === 0n ? 0n : (a.insured * BANK.insurePayout * insPaid) / insOwed;
+    const hadShares = a.shares > 0n;
+    a.wallet += share + ins; b.unsettled -= share + ins; a.shares = 0n;
+    if (ins > 0n) a.insured = 0n;
+    if (hadShares) b.events.push({ t: "settle", who: id, amount: share });
+    if (ins > 0n) b.events.push({ t: "insurance_payout", who: id, amount: ins });
   }
-  for (const [id, a] of b.accounts) {
-    if (a.insuredRound !== b.round || a.insured === 0n) continue;
-    // a payout is new LEMON, so it stops at the bank's ceiling like every other mint
-    const pay = capped(b, a.insured * BANK.insurePayout);
-    a.wallet += pay; b.supply += pay; a.insured = 0n;
-    b.events.push({ t: "insurance_payout", who: id, amount: pay });
-  }
-  b.totalShares = 0n; b.index = SCALE; b.liabilitiesAtCollapse = liab; b.collapsed = true;
+  b.totalShares = 0n; b.index = SCALE; b.liabilitiesAtCollapse = liab; b.insuredTotal = 0n; b.collapsed = true;
   b.events.push({ t: "round_end", round: b.round, survived: false });
 }
 
@@ -226,7 +246,7 @@ export function insure(b: Bank, who: string, premium: bigint): string | null {
   if (premium > BANK.insureMax - have) return `at most ${BANK.insureMax} LEMON of insurance per round`;
   if ((prev?.wallet ?? 0n) < premium) return "not enough LEMON in wallet";
   const a = acct(b, who);
-  a.wallet -= premium; b.reserve += premium;
+  a.wallet -= premium; b.reserve += premium; b.insuredTotal += premium;
   a.insured = have + premium; a.insuredRound = b.round;
   b.events.push({ t: "insure", who, premium });
   return null;
@@ -288,12 +308,13 @@ export function setChair(b: Bank, caller: string, chair: string): string | null 
  * After a collapse it runs the bailout and opens the next round instead.
  */
 export function advanceEpoch(b: Bank, shockPermille = 0n): void {
+  b.airdropsThisEpoch = 0;
   if (b.collapsed) {
     const minted = capped(b, (b.liabilitiesAtCollapse * BANK.bailoutPermille) / 1000n);
     b.reserve += minted; b.supply += minted;
     b.collapsed = false; b.round += 1; b.epoch = 0; b.epochId += 1;
     b.policy = { ...DEFAULT_POLICY, tone: "calm", statement: "", attestation: "" };
-    b.mintedThisRound = 0n; b.roundStartSupply = b.supply; b.outflow = 0n;
+    b.mintedThisRound = 0n; b.roundStartSupply = b.supply; b.outflow = 0n; b.insuredTotal = 0n;
     b.events.push({ t: "bailout", round: b.round, minted });
     return;
   }
@@ -312,7 +333,7 @@ export function advanceEpoch(b: Bank, shockPermille = 0n): void {
   b.epochId += 1; b.epoch += 1; b.outflow = 0n;
   if (b.epoch >= BANK.epochsPerRound) {
     b.events.push({ t: "round_end", round: b.round, survived: true });
-    b.round += 1; b.epoch = 0; b.mintedThisRound = 0n; b.roundStartSupply = b.supply;
+    b.round += 1; b.epoch = 0; b.mintedThisRound = 0n; b.roundStartSupply = b.supply; b.insuredTotal = 0n;
   }
   b.events.push({ t: "epoch", epochId: b.epochId, round: b.round, epoch: b.epoch });
 }

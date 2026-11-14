@@ -1,7 +1,7 @@
 // Read the bank on NEAR testnet (public RPC, read-only) and save the numbers the film shows as src/chain.json.
 //   npm run snapshot
 import { writeFileSync } from "node:fs";
-const BANK = "lemonbank-587f5c93.testnet";
+const BANK = "lemonbank-96b0974e.testnet";
 const RPCS = ["https://rpc.testnet.near.org", "https://test.rpc.fastnear.com", "https://rpc.testnet.fastnear.com"];
 async function view(method, args = {}) {
   let last;

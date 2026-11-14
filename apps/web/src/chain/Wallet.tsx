@@ -18,7 +18,7 @@ import { rumorLabel } from "../ruText";
 import { CONTRACT, EXPLORER } from "./rpc";
 import {
   AIRDROP_LEMON, DEFAULT_DEPOSIT, INSURE_PREMIUM, LOBBY_FEE, MAX_SPEECH_BYTES, RUMOR_FEE, RUMOR_KINDS,
-  amountArg, bankArgs, bankView, byteLength, fmtLemon as fmtPlain, speechArg, storedGuestId, isPublicGuest, waitText,
+  amountArg, bankArgs, bankView, byteLength, fmtLemon as fmtPlain, lemon, speechArg, storedGuestId, isPublicGuest, waitText,
 } from "./bankView";
 
 /** An amount the way the reader's language writes it: 1,000 in English, 1 000 in Russian. */
@@ -28,7 +28,7 @@ import { LeoClock } from "./LeoClock";
 
 type Act = "airdrop" | "deposit" | "withdraw_all" | "lobby" | "rumor" | "insure" | "advance_epoch";
 interface Snapshot { wallet: bigint; deposit: bigint }
-type Result = { act: Act; ok: true; txHash: string; note: string; before: Snapshot | null } | { act: Act; ok: false; error: string; txHash?: string };
+type Result = { act: Act; ok: true; txHash: string; note: string; before: Snapshot | null; shared?: boolean } | { act: Act; ok: false; error: string; txHash?: string };
 interface Busy { act: Act; stage: "guest" | "sending"; creating: boolean; sub?: string }
 
 const storage = (): Storage | null => { try { return window.localStorage; } catch { return null; } };
@@ -74,7 +74,7 @@ export function Wallet() {
   const v = bankView(acct?.value ?? null, state, now);
 
   /** Sign and send one call from the guest account, then show what came of it and re-read the account and the bank. */
-  async function act(a: Act, method: string, args: object, note: string, opts: { create?: boolean; sub?: string; then?: () => void } = {}) {
+  async function act(a: Act, method: string, args: object, note: string, opts: { create?: boolean; sub?: string; then?: () => void; deposit?: bigint } = {}) {
     if (sending.current) return;
     sending.current = true;
     const creating = opts.create === true;
@@ -84,12 +84,13 @@ export function Wallet() {
     let res: Result, isGone = false;
     try {
       const guest = await import("./guest");
-      const out = await guest.callBank(method, args, { create: creating, onStage: (stage) => { if (alive.current) setBusy({ act: a, stage, creating, sub: opts.sub }); } });
+      const out = await guest.callBank(method, args, { create: creating, deposit: opts.deposit, onStage: (stage) => { if (alive.current) setBusy({ act: a, stage, creating, sub: opts.sub }); } });
       if (out.ok) res = { act: a, ok: true, txHash: out.txHash, note, before };
       else if (method === "airdrop" && /already claimed/i.test(out.error) && isPublicGuest(storedGuestId(storage()))) {
         // the faucet refused a personal account, so the page fell back to the shared public guest, whose airdrop was
         // claimed when it was set up: the account is open and already holds test LEMON
-        res = { act: a, ok: true, txHash: out.txHash ?? "", before: null, note: tr("The testnet faucet is not giving out new accounts right now, so you are on the shared public guest account. It already holds test LEMON.",
+        // nothing was done for this visitor (the refused airdrop is not theirs to see as a success): no link, no "done"
+        res = { act: a, ok: true, txHash: "", before: null, shared: true, note: tr("The testnet faucet is not giving out new accounts right now, so you are on the shared public guest account. It already holds test LEMON.",
           "Кран тестовой сети сейчас не выдаёт новые счета, поэтому ты на общем гостевом счёте. На нём уже есть тестовые LEMON.") };
       }
       else { res = { act: a, ok: false, error: out.error, txHash: out.txHash }; isGone = out.code === "gone"; }
@@ -129,7 +130,10 @@ export function Wallet() {
   const daySec = state ? Math.round(state.epoch_ms / 1000) : 30;
   const maxDep = dep !== null && BigInt(dep) > v.wallet;
 
-  const getCoin = () => void act("airdrop", "airdrop", bankArgs.airdrop(), airdropNote, { create: !hasAccount });
+  // a newcomer pays for its place in the bank with the airdrop (the storage price, test NEAR from the faucet); an
+  // account the bank already holds attaches nothing
+  const storagePrice = lemon(state?.storage_price);
+  const getCoin = () => void act("airdrop", "airdrop", bankArgs.airdrop(), airdropNote, { create: !hasAccount, deposit: acct?.value ? 0n : storagePrice });
   const doDeposit = () => dep && void act("deposit", "deposit", bankArgs.deposit(dep), tr(`${fmtLemon(BigInt(dep))} LEMON moved from your wallet into the bank.`, `${fmtLemon(BigInt(dep))} LEMON перешли из кошелька во вклад.`));
   const doRun = () => void act("withdraw_all", "withdraw_all", bankArgs.withdraw_all(), tr("The bank paid your deposit out to your wallet.", "Банк выплатил вклад тебе в кошелёк."));
   const doDay = () => void act("advance_epoch", "advance_epoch", bankArgs.advance_epoch(), tr("A new bank day began: interest was added to every deposit and the loans were checked.", "Начался новый банковский день: на все вклады начислены проценты, кредиты проверены."));
@@ -180,7 +184,7 @@ export function Wallet() {
       {last && (
         last.ok ? (
           <div className="w-result" role="status">
-            <span className="chip ok">{tr("done · real operation on NEAR testnet", "прошло · настоящая операция в NEAR testnet")}</span>
+            <span className="chip ok">{last.shared ? tr("shared guest account · NEAR testnet", "общий гостевой счёт · NEAR testnet") : tr("done · real operation on NEAR testnet", "прошло · настоящая операция в NEAR testnet")}</span>
             <p>{last.note}{" "}
               {last.before && acct && (last.before.wallet !== v.wallet || last.before.deposit !== v.deposit) && (
                 <span className="w-delta">
@@ -287,8 +291,8 @@ export function Wallet() {
                 need={tr(`A deposit. You have ${fmtLemon(v.deposit)} LEMON in the bank.`, `Вклад. У тебя в банке ${fmtLemon(v.deposit)} LEMON.`)}
                 will={<>{tr("The bank pays your whole deposit back to your wallet (or as much as the chair's daily limit lets out). If the vault runs dry, the bank sells loans at a loss and coins burn.", "Банк вернёт весь вклад тебе в кошелёк (или столько, сколько пропустит дневной лимит председателя). Если в сейфе не хватит, банк продаст кредиты в убыток, и монеты сгорят.")}
                   {" "}{v.earlyFee
-                    ? <b>{tr("Your deposit has not stayed a full bank day yet: taking it out now pays back today's interest (the early-withdrawal fee, it burns).", "Вклад ещё не пролежал полный банковский день: если забрать сейчас, вернёшь проценты за этот день (сбор за ранний вывод, он сгорает).")}</b>
-                    : tr("Money taken out in the first bank day after a deposit pays back that day's interest.", "Деньги, забранные в первый банковский день после вклада, возвращают проценты за этот день.")}</>}
+                    ? <b>{tr(`${fmtLemon(v.earlyFeeOn)} LEMON of your deposit went in during the previous bank day: taking it out now pays back the interest it got that day (the early-withdrawal fee, it burns). Money you put in today comes out first and pays nothing; older money pays nothing.`, `${fmtLemon(v.earlyFeeOn)} LEMON твоего вклада внесены в прошлый банковский день: если забрать их сейчас, вернёшь проценты, начисленные на них за этот день (сбор за ранний вывод, он сгорает). Внесённое сегодня выходит первым и без сбора; более старые деньги — тоже без сбора.`)}</b>
+                    : tr("Money deposited in one bank day and taken out in the next pays back the interest it got for that day; a later deposit does not change how old the rest is.", "Деньги, внесённые в один банковский день и забранные в следующий, возвращают проценты за этот день; новый вклад не меняет возраст остальных денег.")}</>}
                 see={tr("The wallet number above grows, the deposit becomes 0.", "Число «В кошельке» выше вырастет, вклад станет 0.")}
               />
               <button className="run" disabled={off} onClick={doRun}>{label("withdraw_all", tr("Take everything out (run)", "Забрать всё (бежать)"))}</button>
@@ -310,18 +314,19 @@ export function Wallet() {
                 placeholder={tr("What the chair and the town should hear", "Что должны услышать председатель и город")}
                 aria-label={tr("Your speech", "Твоя речь")} />
               <span className={`rb-count${sayBytes > MAX_SPEECH_BYTES ? " over" : ""}`}>{sayBytes}/{MAX_SPEECH_BYTES}</span>
-              <button disabled={off || say === null} onClick={() => say !== null && void act("lobby", "lobby", bankArgs.lobby(say),
+              <button disabled={off || say === null || v.chairListened} onClick={() => say !== null && void act("lobby", "lobby", bankArgs.lobby(say),
                 tr("Your words are written on chain; the chair and the other depositors read them from the bank.", "Твои слова записаны в сети; председатель и другие вкладчики читают их из банка."), { then: () => setSpeech("") })}>
                 {label("lobby", tr("Speak", "Сказать"))}
               </button>
             </div>
+            {v.chairListened && <p className="small" role="status">{tr("The chair has already read the room this bank day: the bank froze its question to the model. Speeches and rumours open again with the next bank day.", "Председатель уже выслушал город в этот банковский день: банк зафиксировал вопрос к модели. Речи и слухи снова откроются со следующим банковским днём.")}</p>}
             <p className="small muted">{tr(`Costs ${LOBBY_FEE} LEMON from your wallet (burned). Up to ${MAX_SPEECH_BYTES} bytes, at most 2 per bank day. Everyone sees it in "The real bank" below, next to the chair's statement.`, `Стоит ${LOBBY_FEE} LEMON из кошелька (сгорают). До ${MAX_SPEECH_BYTES} байт, не больше 2 за банковский день. Все видят это в блоке «Настоящий банк» ниже, рядом с заявлением председателя.`)}</p>
           </div>
           <div className="w-act">
             <div className="row">
               <span className="rb-label">{tr("Spread a rumour:", "Пустить слух:")}</span>
               {RUMOR_KINDS.map((kind) => (
-                <button key={kind} disabled={off} onClick={() => void act("rumor", "rumor", bankArgs.rumor(kind),
+                <button key={kind} disabled={off || v.chairListened} onClick={() => void act("rumor", "rumor", bankArgs.rumor(kind),
                   tr(`The rumour is out: ${rumorLabel(kind)}.`, `Слух пущен: ${rumorLabel(kind)}.`), { sub: kind })}>
                   {label("rumor", rumorLabel(kind), kind)}
                 </button>
@@ -350,7 +355,7 @@ export function Wallet() {
             <div className="w-act">
               <div className="row">
                 <button disabled={off || !v.epochDue} onClick={doDay}>{label("advance_epoch", tr("Start the next bank day", "Начать следующий банковский день"))}</button>
-                <span className="small muted">{v.epochInSec === null ? "" : v.epochDue ? tr("the current one is over: anyone may", "текущий закончился: может любой") : tr(`in ${v.epochInSec} s`, `через ${v.epochInSec} с`)}</span>
+                <span className="small muted">{v.epochInSec === null ? "" : v.epochDue ? tr("the current one is over: anyone may", "текущий закончился: может любой") : tr(`in ${waitText(v.epochInSec, false)}`, `через ${waitText(v.epochInSec, true)}`)}</span>
               </div>
             </div>
           )}

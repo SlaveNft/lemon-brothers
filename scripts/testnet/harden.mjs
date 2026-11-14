@@ -6,12 +6,14 @@
  *
  *   node scripts/testnet/harden.mjs --paths   exercise the new contract paths (a few cents of testnet NEAR and LEMON):
  *       1. ft_transfer to an account that never registered            -> refused, with the reason
- *       2. storage_deposit for it (0.0025 NEAR), then the same transfer -> accepted, standard ft_transfer event
+ *       2. storage_deposit for it (storage_balance_bounds().min), then the same transfer -> accepted, ft_transfer event
  *       3. three speeches from one account in one epoch                -> the third is refused
- *       4. submit_run with a seed that is not today's                  -> refused; with today's seed -> recorded
+ *          (run it before the chair freezes the day's question: after that every speech waits for the next day)
+ *       4. submit_run with a seed that is not today's                  -> refused; a game cut short
+ *          after one day -> refused; a whole game with today's seed -> recorded with the score the contract computes
  *       5. views: storage bounds, the bank's own balance, supply log, stats, leaderboard
  *   node scripts/testnet/harden.mjs --keys    delete the full-access keys of the chair accounts (current and
- *       impeached). IRREVERSIBLE: each account keeps only its function-call key for set_policy / set_policy_attested,
+ *       impeached). IRREVERSIBLE: each account keeps only its function-call key for the chair's methods,
  *       so it can no longer add keys, move NEAR or deploy code, and it stops when its 0.25 NEAR gas allowance is spent.
  *   node scripts/testnet/harden.mjs --lock    delete the full-access key of the bank's own account. IRREVERSIBLE:
  *       nobody can deploy new code to the bank afterwards; its rules are then fixed and only the DAO's three owner
@@ -63,12 +65,11 @@ if (flags.has("--paths")) {
   for (const i of [1, 2, 3]) await attempt(`3. speech ${i} of 3 in one epoch`, from, st.contract, [fc("lobby", { text: `Hardening check, speech ${i}.` })], i === 3);
 
   const today = await view(bank, st.contract, "crisis_day");
-  await attempt("4a. submit_run with a seed that is not today's", from, st.contract, [fc("submit_run", { seed: (today.seed + 1) >>> 0, moves: "1n0", score: 1, ending: "run" })], true);
-  // a real crisis: the moves replay in any browser to this score (the leaderboard panel re-runs them)
-  const { replayCrisis, decodeMoves } = await import("@chair/sim");
-  const moves = "1t350.1t500.1n0.1n0.1n0.1n0.1n0.1n0.1n0.1n0", replay = replayCrisis(today.seed, decodeMoves(moves));
-  if (replay) await attempt("4b. submit_run with today's seed and a replayable result", from, st.contract, [fc("submit_run", { seed: today.seed, moves, score: replay.result.score, ending: replay.result.ending })]);
-  await attempt("4c. submit_run claiming 100 for moves that do not earn it (recorded; every browser flags it)", account((st.agents[1].id ?? st.agents[1])), st.contract, [fc("submit_run", { seed: today.seed, moves: "0n0", score: 100, ending: "survived" })]);
+  await attempt("4a. submit_run with a seed that is not today's", from, st.contract, [fc("submit_run", { seed: (today.seed + 1) >>> 0, moves: "1n0" })], true);
+  await attempt("4b. submit_run with a game cut short after one day", account((st.agents[1].id ?? st.agents[1])), st.contract, [fc("submit_run", { seed: today.seed, moves: "0n0" })], true);
+  // a whole crisis: the contract replays it and records the score it computes (any browser gets the same)
+  const moves = "1t350.1t500.1n0.1n0.1n0.1n0.1n0.1n0.1n0.1n0";
+  await attempt("4c. submit_run with today's seed and a whole game", from, st.contract, [fc("submit_run", { seed: today.seed, moves }, 50n)]);
 
   for (const [name, args] of [["storage_balance_bounds", {}], ["ft_total_supply", {}], ["get_stats", {}], ["get_runs", {}]])
     note(`5. view ${name}`, { says: JSON.stringify(await view(bank, st.contract, name, args)).slice(0, 400) });

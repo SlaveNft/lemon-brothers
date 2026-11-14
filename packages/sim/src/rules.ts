@@ -13,6 +13,8 @@ export const BANK = {
   /** Loan defaults: each epoch, with this chance, a share of the loan book is written off (burned) and it is news. */
   shockChancePermille: 150, shockMin: 30, shockMax: 150,
   airdrop: 1000n,
+  airdropsPerEpoch: 10,          // newcomers' airdrops per bank day
+  airdropHeadroomPermille: 100n, // an airdrop leaves a tenth of the ceiling free for the chair's printer and a rescue
   lobbyFee: 10n,
   rumorFee: 25n,
   maxSpeechesPerEpoch: 20,

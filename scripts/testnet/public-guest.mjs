@@ -9,7 +9,7 @@
  * Why: the page gives every visitor a throwaway account through the testnet faucet, but the faucet allows only a few
  * accounts per address and then answers "retry in 2 hours". When that happens the page falls back to this account,
  * so "no wallet, no seed phrase" still works. What the published key can do: call airdrop, deposit, withdraw,
- * withdraw_all, lobby, rumor, insure, advance_epoch and submit_run on the bank, paying gas out of this account's
+ * withdraw_all, lobby, rumor, insure, advance_epoch, submit_run and settle on the bank, paying gas out of this account's
  * balance up to the key's allowance. What it cannot do: transfer NEAR, add or delete keys, deploy code, call any other
  * contract, or attach a deposit. The worst a stranger can do with it is spend the account's test LEMON and its gas.
  *
@@ -25,7 +25,7 @@ import { NEAR, ROOT, TGAS, account, failureText, readState, retry, sendTx, sleep
 
 const st = readState();
 if (!st?.contract) throw new Error("no .testnet/deploy.json");
-const METHODS = ["airdrop", "deposit", "withdraw", "withdraw_all", "lobby", "rumor", "insure", "advance_epoch", "submit_run"];
+const METHODS = ["airdrop", "deposit", "withdraw", "withdraw_all", "lobby", "rumor", "insure", "advance_epoch", "submit_run", "settle"];
 const ALLOWANCE = 4n * NEAR, FUND = 4n * NEAR, LEMON_TOPUP = 4000n;
 const id = `guest.${st.contract}`, file = path.join(ROOT, "apps/web/src/chain/publicGuest.json");
 const bank = account(st.contract), funder = account(st.funders[3] ?? st.funders[0]), crowd = account(st.agents[st.agents.length - 1]);
@@ -52,6 +52,15 @@ if (bal < FUND / 2n) {
   console.log(`${funder.accountId} sent ${FUND / NEAR} NEAR for gas: tx ${r.hash}`);
 }
 let a = await view(bank, st.contract, "get_account", { account_id: id });
+if (!a) {
+  // a function-call key cannot attach NEAR, so the guest's place in the bank is paid by the funder
+  const price = BigInt((await view(bank, st.contract, "storage_balance_bounds")).min);
+  const r = await sendTx(funder, st.contract, [fc("storage_deposit", { account_id: id }, 30n, price)], "register the guest");
+  st.publicGuest.registerTx = r.hash; writeState(st);
+  console.log(`${funder.accountId} paid the guest's storage in the bank: tx ${r.hash}`);
+  await sleep(1500);
+  a = await view(bank, st.contract, "get_account", { account_id: id });
+}
 if (!a?.airdropped) {
   const r = await sendTx(guest, st.contract, [fc("airdrop", {})], "airdrop with the public key");
   st.publicGuest.airdropTx = r.hash; writeState(st);

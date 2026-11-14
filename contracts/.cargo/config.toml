@@ -4,3 +4,7 @@
 # "WebAssembly trap: unreachable" instead of the contract's own reason. Keep this flag.
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg", "near"]
+
+# NEP-330 source metadata baked into the contract (`contract_source_metadata`): where its source lives.
+[env]
+NEP330_LINK = "https://github.com/SlaveNft/lemon-brothers"

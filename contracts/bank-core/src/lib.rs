@@ -5,7 +5,13 @@
 //! RULES.md explains every number.
 //!
 //! Every method returns `Err(reason)` without changing state, or `Ok(())` after applying the change.
-//! Invariant: `supply == sum(wallets) + reserve + loans`.
+//! Invariant: `supply == sum(wallets) + reserve + loans + unsettled`.
+//!
+//! Accounts are a working set: the simulation keeps every account in `accounts`; the contract loads only the accounts
+//! a call touches (and the collapse records they need) and writes them back. Nothing here iterates over all accounts,
+//! so a call costs the same with ten depositors or a million. A collapse is settled lazily: it writes a
+//! `CollapseRecord` and moves the vault into `unsettled`; each account collects its share on its next touch
+//! (`settle`), which pays exactly what an eager split would have paid.
 
 // The integer math is written out step by step, the way packages/sim/src/bank.ts writes it; keep it that way.
 #![allow(clippy::manual_div_ceil, clippy::manual_abs_diff, clippy::manual_checked_ops)]
@@ -22,6 +28,11 @@ pub const HAIRCUT_PERMILLE: u128 = 400;
 pub const EPOCHS_PER_ROUND: u32 = 10;
 pub const BAILOUT_PERMILLE: u128 = 200;
 pub const AIRDROP: u128 = 1000;
+/// At most this many newcomers' airdrops per bank day: free coins cannot be farmed faster than the town burns them.
+pub const AIRDROPS_PER_EPOCH: u32 = 10;
+/// An airdrop must leave this share of the ceiling unprinted (permille of `max_supply`), so newcomers can never use up
+/// the room the chair's printer and a rescue need.
+pub const AIRDROP_HEADROOM_PERMILLE: u128 = 100;
 pub const LOBBY_FEE: u128 = 10;
 pub const RUMOR_FEE: u128 = 25;
 pub const MAX_SPEECHES_PER_EPOCH: usize = 20;
@@ -88,12 +99,27 @@ pub struct Account {
     /// Round of `insured`; -1 = never.
     pub insured_round: i64,
     pub airdropped: bool,
+    /// The bank's collapse count when this account's shares and insurance were last settled: if the bank has
+    /// collapsed since (`Bank::era` is higher), `settle` pays the account its share of that collapse first.
+    pub era: u32,
 }
 
 impl Account {
-    fn fresh() -> Self {
-        Account { withdrawn_epoch_id: -1, insured_round: -1, ..Default::default() }
+    pub fn fresh(era: u32) -> Self {
+        Account { withdrawn_epoch_id: -1, insured_round: -1, era, ..Default::default() }
     }
+}
+
+/// What one collapse owes: the vault split over the shares that existed at that moment, and the insurance of that
+/// round (`ins_paid` of `ins_owed` could be printed under the ceiling; every payout is cut by the same ratio).
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CollapseRecord {
+    pub round: u32,
+    pub assets: u128,
+    pub total_shares: u128,
+    pub ins_owed: u128,
+    pub ins_paid: u128,
 }
 
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -111,8 +137,8 @@ pub enum Event {
     Airdrop { who: String, amount: u128 },
     Deposit { who: String, amount: u128 },
     Withdraw { who: String, amount: u128, fire_sold: u128, burned: u128 },
-    /// `burned`: the haircut on the loans sold in the collapse.
-    Collapse { who: String, assets: u128, liabilities: u128, burned: u128 },
+    /// `burned`: the haircut on the loans sold in the collapse; `insurance`: printed for the round's insured accounts.
+    Collapse { who: String, assets: u128, liabilities: u128, burned: u128, insurance: u128 },
     Settle { who: String, amount: u128 },
     InsurancePayout { who: String, amount: u128 },
     Policy { policy: Policy },
@@ -146,12 +172,23 @@ pub struct Bank {
     pub round_start_supply: u128,
     pub liabilities_at_collapse: u128,
     pub outflow: u128,
+    /// Collapses so far; the next collapse writes record number `era`.
+    pub era: u32,
+    /// LEMON owed to accounts by past collapses and not collected yet (vault shares and insurance payouts).
+    pub unsettled: u128,
+    /// Insurance premiums bought this round (the collapse owes 3x this).
+    pub insured_total: u128,
+    /// Airdrops in the current epoch.
+    pub airdrops_this_epoch: u32,
     /// Only the current epoch's speeches and rumours are kept; older ones live in the event log.
     pub speeches: Vec<Note>,
     pub rumors: Vec<Note>,
-    /// Accounts in registration order (a collapse settles them in this order).
-    pub order: Vec<String>,
+    /// The working set of accounts (all of them in the simulation; the ones a call touches in the contract).
+    #[cfg_attr(feature = "borsh", borsh(skip))]
     pub accounts: BTreeMap<String, Account>,
+    /// The working set of collapse records, by era (all of them in the simulation).
+    #[cfg_attr(feature = "borsh", borsh(skip))]
+    pub records: BTreeMap<u32, CollapseRecord>,
     pub chair: String,
     pub owner: String,
     /// The most LEMON this bank may ever have in existence; 0 = no ceiling set. Not part of the stored layout: the
@@ -178,7 +215,8 @@ impl Bank {
             supply: 0, reserve: 0, loans: 0, total_shares: 0, index: SCALE, collapsed: false,
             epoch: 0, round: 0, epoch_id: 0, policy: Policy::default_policy(), policy_set_epoch_id: -1,
             minted_this_round: 0, round_start_supply: 0, liabilities_at_collapse: 0, outflow: 0,
-            speeches: vec![], rumors: vec![], order: vec![], accounts: BTreeMap::new(),
+            era: 0, unsettled: 0, insured_total: 0, airdrops_this_epoch: 0,
+            speeches: vec![], rumors: vec![], accounts: BTreeMap::new(), records: BTreeMap::new(),
             chair: chair.into(), owner: owner.into(), max_supply: 0, events: vec![],
         };
         for (who, amount) in genesis {
@@ -195,13 +233,56 @@ impl Bank {
         if self.max_supply == 0 { u128::MAX } else { self.max_supply.saturating_sub(self.supply) }
     }
 
-    /// Get or register an account (registration order matters, see `order`).
+    /// The most a policy may print now: 5% of the supply this epoch, what is left of 15% of the round's starting
+    /// supply, and the room under the ceiling (`check_policy` refuses anything above it).
+    pub fn mint_allowance(&self) -> u128 {
+        let epoch_cap = self.supply * MINT_EPOCH_PERMILLE / 1000;
+        let round_left = (self.round_start_supply * MINT_ROUND_PERMILLE / 1000).saturating_sub(self.minted_this_round);
+        epoch_cap.min(round_left).min(self.mint_room())
+    }
+
+    /// Get or register an account, settled: a past collapse's share is paid into it first.
     pub fn acct(&mut self, who: &str) -> &mut Account {
         if !self.accounts.contains_key(who) {
-            self.order.push(who.to_string());
-            self.accounts.insert(who.to_string(), Account::fresh());
+            self.accounts.insert(who.to_string(), Account::fresh(self.era));
         }
+        self.settle(who);
         self.accounts.get_mut(who).unwrap()
+    }
+
+    /// What `who` will collect from a past collapse on its next touch: (vault share, insurance payout).
+    pub fn owed_to(&self, who: &str) -> (u128, u128) {
+        let Some(a) = self.accounts.get(who) else { return (0, 0) };
+        if a.era >= self.era { return (0, 0); }
+        let r = self.records.get(&a.era).unwrap_or_else(|| panic!("collapse record {} not loaded", a.era));
+        let share = if a.shares == 0 || r.total_shares == 0 { 0 } else { r.assets * a.shares / r.total_shares };
+        let ins = if a.insured == 0 || a.insured_round != r.round as i64 || r.ins_owed == 0 { 0 } else { a.insured * INSURE_PAYOUT * r.ins_paid / r.ins_owed };
+        (share, ins)
+    }
+
+    /// Pay `who` what past collapses owe it (nothing if it is up to date). Moves LEMON from `unsettled` to the wallet;
+    /// the supply does not change. Called on every touch, and by anyone through the contract's `settle`.
+    pub fn settle(&mut self, who: &str) -> bool {
+        let (share, ins) = self.owed_to(who);
+        let era = self.era;
+        let Some(a) = self.accounts.get_mut(who) else { return false };
+        if a.era >= era { return false; }
+        let had_shares = a.shares > 0;
+        let had_insurance = ins > 0;
+        a.wallet += share + ins;
+        a.shares = 0;
+        if had_insurance { a.insured = 0; }
+        a.era = era;
+        self.unsettled -= share + ins;
+        if had_shares { self.events.push(Event::Settle { who: who.into(), amount: share }); }
+        if had_insurance { self.events.push(Event::InsurancePayout { who: who.into(), amount: ins }); }
+        true
+    }
+
+    /// Pay every account in the working set what past collapses owe it (the simulation does this at the collapse).
+    pub fn settle_all(&mut self) {
+        let ids: Vec<String> = self.accounts.keys().cloned().collect();
+        for id in ids { self.settle(&id); }
     }
 
     pub fn is_registered(&self, who: &str) -> bool {
@@ -215,20 +296,24 @@ impl Bank {
         true
     }
 
+    /// The wallet, counting what a past collapse owes it (collected on the next touch).
     fn wallet_of(&self, who: &str) -> u128 {
-        self.accounts.get(who).map(|a| a.wallet).unwrap_or(0)
+        let (share, ins) = self.owed_to(who);
+        self.accounts.get(who).map(|a| a.wallet).unwrap_or(0) + share + ins
     }
 
     pub fn liabilities(&self) -> u128 {
         self.total_shares * self.index / SCALE
     }
+    /// The deposit's value now (0 if its shares were in a bank that has collapsed since).
     pub fn value_of(&self, who: &str) -> u128 {
-        self.accounts.get(who).map(|a| a.shares * self.index / SCALE).unwrap_or(0)
+        self.accounts.get(who).filter(|a| a.era >= self.era).map(|a| a.shares * self.index / SCALE).unwrap_or(0)
     }
     pub fn reserve_ratio(&self) -> u128 {
         let l = self.liabilities();
         if l == 0 { 1000 } else { self.reserve * 1000 / l }
     }
+    /// Sum of the wallets in the working set (every wallet, in the simulation).
     pub fn sum_wallets(&self) -> u128 {
         self.accounts.values().map(|a| a.wallet).sum()
     }
@@ -250,9 +335,14 @@ impl Bank {
 
     pub fn airdrop(&mut self, who: &str) -> R {
         if self.accounts.get(who).map(|a| a.airdropped).unwrap_or(false) { return Err("airdrop already claimed".into()); }
-        if AIRDROP > self.mint_room() {
-            return Err(format!("airdrop refused: the bank's ceiling of {} LEMON is reached; newcomers get coins again once some have burned", self.max_supply));
+        if self.airdrops_this_epoch >= AIRDROPS_PER_EPOCH {
+            return Err(format!("airdrop refused: {} newcomers got coins this bank day already, come back after the next one", AIRDROPS_PER_EPOCH));
         }
+        let headroom = self.max_supply * AIRDROP_HEADROOM_PERMILLE / 1000;
+        if AIRDROP.saturating_add(headroom) > self.mint_room() {
+            return Err(format!("airdrop refused: the bank's ceiling of {} LEMON is close; newcomers get coins again once some have burned", self.max_supply));
+        }
+        self.airdrops_this_epoch += 1;
         let a = self.acct(who);
         a.airdropped = true;
         a.wallet += AIRDROP;
@@ -279,7 +369,7 @@ impl Bank {
     pub fn withdraw(&mut self, who: &str, amount: u128) -> R {
         if self.collapsed { return Err("bank is closed until the bailout".into()); }
         let (shares, used) = match self.accounts.get(who) {
-            Some(a) if a.shares > 0 => (a.shares, if a.withdrawn_epoch_id == self.epoch_id as i64 { a.withdrawn } else { 0 }),
+            Some(a) if a.shares > 0 && a.era >= self.era => (a.shares, if a.withdrawn_epoch_id == self.epoch_id as i64 { a.withdrawn } else { 0 }),
             _ => return Err("no deposit".into()),
         };
         let value = shares * self.index / SCALE;
@@ -327,6 +417,9 @@ impl Bank {
         self.withdraw(who, v)
     }
 
+    /// Every loan is sold at the haircut; the vault is owed to the shares that exist now and the round's insurance is
+    /// printed (under the ceiling). Both go into `unsettled` and a `CollapseRecord`; accounts collect on their next
+    /// touch. Nothing here depends on how many accounts the bank has.
     fn collapse(&mut self, who: &str) {
         let liab = self.liabilities();
         let proceeds = self.loans * (1000 - HAIRCUT_PERMILLE) / 1000;
@@ -335,33 +428,20 @@ impl Bank {
         self.reserve += proceeds;
         self.loans = 0;
         let assets = self.reserve;
-        let total = self.total_shares;
-        self.events.push(Event::Collapse { who: who.into(), assets, liabilities: liab, burned });
-        let order = self.order.clone();
-        for id in &order {
-            let a = self.accounts.get_mut(id).unwrap();
-            if a.shares == 0 { continue; }
-            let pay = if total == 0 { 0 } else { assets * a.shares / total };
-            a.wallet += pay;
-            a.shares = 0;
-            self.reserve -= pay;
-            self.events.push(Event::Settle { who: id.clone(), amount: pay });
-        }
-        let round = self.round as i64;
-        for id in &order {
-            let room = self.mint_room();
-            let a = self.accounts.get_mut(id).unwrap();
-            if a.insured_round != round || a.insured == 0 { continue; }
-            // a payout is new LEMON, so it stops at the bank's ceiling like every other mint
-            let pay = (a.insured * INSURE_PAYOUT).min(room);
-            a.wallet += pay;
-            a.insured = 0;
-            self.supply += pay;
-            self.events.push(Event::InsurancePayout { who: id.clone(), amount: pay });
-        }
+        // insurance is new LEMON, so it stops at the bank's ceiling like every other mint; a shortfall cuts every
+        // payout by the same ratio
+        let ins_owed = self.insured_total * INSURE_PAYOUT;
+        let ins_paid = ins_owed.min(self.mint_room());
+        self.supply += ins_paid;
+        self.unsettled += assets + ins_paid;
+        self.reserve = 0;
+        self.records.insert(self.era, CollapseRecord { round: self.round, assets, total_shares: self.total_shares, ins_owed, ins_paid });
+        self.era += 1;
+        self.events.push(Event::Collapse { who: who.into(), assets, liabilities: liab, burned, insurance: ins_paid });
         self.total_shares = 0;
         self.index = SCALE;
         self.liabilities_at_collapse = liab;
+        self.insured_total = 0;
         self.collapsed = true;
         self.events.push(Event::RoundEnd { round: self.round, survived: false });
     }
@@ -403,7 +483,7 @@ impl Bank {
         if self.epoch > INSURE_LAST_EPOCH { return Err("too late in the round to insure".into()); }
         if premium < INSURE_MIN { return Err(format!("premium must be at least {}", INSURE_MIN)); }
         let round = self.round as i64;
-        let have = self.accounts.get(who).map(|a| if a.insured_round == round { a.insured } else { 0 }).unwrap_or(0);
+        let have = self.accounts.get(who).filter(|a| a.era >= self.era).map(|a| if a.insured_round == round { a.insured } else { 0 }).unwrap_or(0);
         // `have <= INSURE_MAX` always; written this way a huge premium cannot overflow the sum.
         if premium > INSURE_MAX.saturating_sub(have) { return Err(format!("at most {} LEMON of insurance per round", INSURE_MAX)); }
         if self.wallet_of(who) < premium { return Err("not enough LEMON in wallet".into()); }
@@ -412,6 +492,7 @@ impl Bank {
         a.insured = have + premium;
         a.insured_round = round;
         self.reserve += premium;
+        self.insured_total += premium;
         self.events.push(Event::Insure { who: who.into(), premium });
         Ok(())
     }
@@ -475,6 +556,7 @@ impl Bank {
     pub fn advance_epoch(&mut self, shock_permille: u128) {
         self.speeches.clear();
         self.rumors.clear();
+        self.airdrops_this_epoch = 0;
         if self.collapsed {
             let minted = (self.liabilities_at_collapse * BAILOUT_PERMILLE / 1000).min(self.mint_room());
             self.reserve += minted;
@@ -487,6 +569,7 @@ impl Bank {
             self.minted_this_round = 0;
             self.round_start_supply = self.supply;
             self.outflow = 0;
+            self.insured_total = 0;
             self.events.push(Event::Bailout { round: self.round, minted });
             return;
         }
@@ -519,6 +602,7 @@ impl Bank {
             self.epoch = 0;
             self.minted_this_round = 0;
             self.round_start_supply = self.supply;
+            self.insured_total = 0;
         }
         self.events.push(Event::Epoch { epoch_id: self.epoch_id, round: self.round, epoch: self.epoch });
     }
@@ -537,7 +621,7 @@ mod tests {
     use super::*;
 
     fn conserved(b: &Bank) {
-        assert_eq!(b.supply, b.sum_wallets() + b.reserve + b.loans);
+        assert_eq!(b.supply, b.sum_wallets() + b.reserve + b.loans + b.unsettled);
     }
 
     fn bank_with(deps: &[(&str, u128)]) -> Bank {
@@ -572,6 +656,9 @@ mod tests {
         assert!(!b.collapsed);
         b.withdraw_all("b").unwrap();
         assert!(b.collapsed);
+        assert_eq!(b.owed_to("c").1, 300, "the insurance pays 3x the premium");
+        conserved(&b);
+        b.settle_all();
         assert!(b.accounts["c"].wallet >= 300);
         conserved(&b);
         b.advance_epoch(0);
@@ -632,8 +719,11 @@ mod tests {
         let mut b = bank_with(&[("a", 10_000)]);
         b.max_supply = 0;
         assert_eq!(b.mint_room(), u128::MAX);
-        for i in 0..40 { b.airdrop(&format!("n{i}")).unwrap(); }
-        assert_eq!(b.supply, 50_000);
+        for i in 0..40 {
+            if i > 0 && i % AIRDROPS_PER_EPOCH as usize == 0 { b.advance_epoch(0); }
+            b.airdrop(&format!("n{i}")).unwrap();
+        }
+        assert!(b.supply >= 50_000);
     }
 
     #[test]
@@ -718,7 +808,7 @@ mod tests {
         let mut b = crowd(1);
         let err = b.transfer("r0", "stranger", 10).unwrap_err();
         assert!(err.contains("not registered"), "{err}");
-        assert!(!b.is_registered("stranger") && b.order.len() == 1, "a refused transfer registers nobody");
+        assert!(!b.is_registered("stranger") && b.accounts.len() == 1, "a refused transfer registers nobody");
         assert!(b.register("stranger"));
         assert!(!b.register("stranger"));
         b.transfer("r0", "stranger", 10).unwrap();
@@ -743,10 +833,11 @@ mod tests {
         let mut supply: i128 = 10_000;
         for e in &b.events {
             supply += match e {
-                Event::Airdrop { amount, .. } | Event::InsurancePayout { amount, .. } | Event::LoanYield { amount } => *amount as i128,
+                Event::Airdrop { amount, .. } | Event::LoanYield { amount } => *amount as i128,
+                Event::Collapse { burned, insurance, .. } => *insurance as i128 - *burned as i128,
                 Event::Bailout { minted, .. } => *minted as i128,
                 Event::Policy { policy } => policy.mint as i128,
-                Event::Withdraw { burned, .. } | Event::Collapse { burned, .. } => -(*burned as i128),
+                Event::Withdraw { burned, .. } => -(*burned as i128),
                 Event::Writedown { amount, .. } => -(*amount as i128),
                 Event::Lobby { .. } => -(LOBBY_FEE as i128),
                 Event::Rumor { .. } => -(RUMOR_FEE as i128),
@@ -788,6 +879,76 @@ mod tests {
         b.withdraw_all("quick").unwrap();
         assert_eq!(b.accounts["quick"].wallet, 1011, "1,000 in, 1.25% back out one epoch later (rounded down)");
         assert!(!b.collapsed);
+        conserved(&b);
+    }
+
+    /// A collapse settled lazily pays every account exactly what an eager split pays, in any order of touches, and
+    /// costs the same whatever the number of depositors.
+    #[test]
+    fn lazy_settlement_matches_an_eager_split() {
+        let n = 2_000;
+        let mut g: Vec<(String, u128)> = (0..n).map(|i| (format!("d{i}"), 200 + (i as u128 * 37) % 900)).collect();
+        g.push(("whale".into(), 50_000));
+        let mut b = Bank::new("dao", "chair", &g);
+        for (w, x) in &g { b.deposit(w, if w == "whale" { *x } else { x - 100 }).unwrap(); }
+        for i in 0..50 { b.insure(&format!("d{i}"), 10 + i as u128).unwrap(); }
+        for _ in 0..4 { b.advance_epoch(0); }
+        b.withdraw_all("whale").unwrap();
+        let mut i = 0;
+        while !b.collapsed { let _ = b.withdraw_all(&format!("d{i}")); i += 1; }
+        conserved(&b);
+        // what an eager split pays each account, from the state the collapse left
+        let r = b.records[&0].clone();
+        let expected: Vec<(String, u128)> = g.iter().map(|(w, _)| {
+            let a = &b.accounts[w];
+            let ins = if a.insured_round == r.round as i64 { a.insured * INSURE_PAYOUT * r.ins_paid / r.ins_owed } else { 0 };
+            (w.clone(), a.wallet + r.assets * a.shares / r.total_shares + ins)
+        }).collect();
+        // settled lazily, in reverse order, one account at a time: the same amounts
+        for (w, want) in expected.iter().rev() {
+            b.settle(w);
+            assert_eq!(b.accounts[w].wallet, *want, "{w}");
+            conserved(&b);
+        }
+        assert!(b.unsettled < g.len() as u128, "only rounding dust stays owed: {}", b.unsettled);
+        b.advance_epoch(0);
+        assert!(!b.collapsed);
+        conserved(&b);
+    }
+
+    #[test]
+    fn insurance_is_cut_pro_rata_at_the_ceiling() {
+        let mut b = bank_with(&[("a", 5000), ("b", 5000), ("c", 1000), ("d", 1000)]);
+        for w in ["c", "d"] { b.acct(w).wallet += 400; b.supply += 400; }
+        b.insure("c", 100).unwrap();
+        b.insure("d", 300).unwrap();
+        for _ in 0..3 { b.advance_epoch(0); }
+        b.withdraw_all("a").unwrap();
+        // leave room for 600 of the 1,200 owed once the run's haircut has burned
+        b.withdraw_all("b").unwrap();
+        assert!(b.collapsed);
+        let r = b.records[&0].clone();
+        assert_eq!(r.ins_owed, 1200);
+        assert_eq!(b.owed_to("c").1 * 3, b.owed_to("d").1, "same ratio for every insured account");
+        b.settle_all();
+        conserved(&b);
+    }
+
+    #[test]
+    fn airdrops_are_rationed_and_leave_the_printer_room() {
+        let mut b = crowd(100);
+        for i in 0..AIRDROPS_PER_EPOCH { b.airdrop(&format!("new{i}")).unwrap(); }
+        let err = b.airdrop("one-more").unwrap_err();
+        assert!(err.contains("this bank day already"), "{err}");
+        b.advance_epoch(0);
+        b.airdrop("one-more").unwrap();
+        // near the ceiling: the airdrop stops while a tenth of the ceiling is still free for the chair and a rescue
+        let mut m = b.supply;
+        for _ in 0..60 { m = b.supply + AIRDROP - 1 + m * AIRDROP_HEADROOM_PERMILLE / 1000; }
+        b.max_supply = m;
+        let err = b.airdrop("late").unwrap_err();
+        assert!(err.contains("ceiling"), "{err}");
+        assert!(b.mint_room() >= b.max_supply / 10);
         conserved(&b);
     }
 }

@@ -9,7 +9,7 @@ import { RU, plural, tr } from "../lang";
 import { rumorLabel, toneLabel } from "../ruText";
 import { CONTRACT, EXPLORER, OVERRIDES, isMethodMissing, viewCall, type ChainState } from "./rpc";
 import { memoLabel, parseStats, parseSupplyLog, supplySteps, type BankStats, type SupplyEntry } from "./board";
-import { secondsToEpoch } from "./bankView";
+import { secondsToEpoch, waitText } from "./bankView";
 import { useBank, useNow } from "./live";
 import { LeoClock } from "./LeoClock";
 import evidence from "./evidence.json";
@@ -115,7 +115,7 @@ function ChainBody({ s, now, err }: { s: ChainState; now: number; err: string | 
           <dt>{tr("Withdrawn this bank day", "Снято за этот банковский день")}</dt><dd>{fmt(s.outflow)}</dd>
           <dt>{tr("Chair may print", "Председатель может напечатать")}</dt><dd>{fmt(Math.max(0, Math.min(epochCap, roundCap - n(s.minted_this_round), room)))} <span className="muted small">({tr("5% a bank day, 15% a round", "5% за банковский день, 15% за раунд")}{ceiling !== null && tr(", never past the ceiling", ", и не выше потолка")})</span></dd>
           {ceiling !== null && <><dt>{tr("Ceiling: the most LEMON that may ever exist", "Потолок: больше монет не будет никогда")}</dt><dd>{fmt(ceiling)} <span className="muted small">({tr(`${fmt(room)} can still be printed`, `ещё можно напечатать ${fmt(room)}`)})</span></dd></>}
-          <dt>{tr("Next bank day", "Следующий банковский день")}</dt><dd>{left > 0 ? tr(`in ${left} s`, `через ${left} с`) : <a href="#coins">{tr("due: anyone may start it →", "пора: начать его может любой →")}</a>}</dd>
+          <dt>{tr("Next bank day", "Следующий банковский день")}</dt><dd>{left > 0 ? tr(`in ${waitText(left, false)}`, `через ${waitText(left, true)}`) : <a href="#coins">{tr("due: anyone may start it →", "пора: начать его может любой →")}</a>}</dd>
         </dl>
         {err && <p className="small muted">{tr("last refresh failed, showing the previous read", "последнее обновление не удалось, показано прошлое")}</p>}
       </div>
@@ -132,7 +132,9 @@ function ChainBody({ s, now, err }: { s: ChainState; now: number; err: string | 
             : tr(`from bank day ${s.policy_set_epoch_id}`, `с банковского дня №${s.policy_set_epoch_id}`)}</span>
         </div>
         <LeoClock s={s} now={now} />
+        <TodaysQuestion s={s} />
         <dl className="trust">
+          {typeof s.credibility === "number" && <><dt>{tr("Trust in Leo (kept by the contract)", "Доверие к Лео (считает контракт)")}</dt><dd>{Math.round(s.credibility / 10)}%</dd></>}
           <dt>{tr("Chair account", "Аккаунт председателя")}</dt><dd>{acct(s.chair)}</dd>
           <dt>{tr("Owner (impeaches)", "Владелец (импичмент)")}</dt><dd>{acct(s.owner)}</dd>
           <dt>{tr("Model", "Модель")}</dt><dd className="mono">{s.chair_model || "—"}</dd>
@@ -152,11 +154,38 @@ function ChainBody({ s, now, err }: { s: ChainState; now: number; err: string | 
   );
 }
 
+interface FrozenQuestion { epoch_id: number; at_ms: number; observation: Record<string, unknown> & { speeches?: unknown[]; rumors?: unknown[] } }
+
+/**
+ * What Leo was asked this bank day, as the contract froze it before the model answered (`get_question`): the bank's own
+ * numbers, his credibility, the speeches made before it, and the town's mood, the one figure that is the chair's word.
+ */
+function TodaysQuestion({ s }: { s: ChainState }) {
+  const [q, setQ] = useState<FrozenQuestion | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!s.question_open) { setQ(null); return; }
+    viewCall<FrozenQuestion | null>("get_question").then((r) => { if (live) setQ(r.value && typeof r.value === "object" ? r.value : null); }, () => {});
+    return () => { live = false; };
+  }, [s.question_open, s.epoch_id]);
+  if (!q) return null;
+  const o = q.observation, pc = (x: unknown) => `${(n(x as number) / 10).toFixed(1)}%`;
+  const at = new Date(q.at_ms).toLocaleTimeString(RU ? "ru-RU" : "en-GB", { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className="leoclock question-frozen" role="note">
+      <div className="lc-head"><b>{tr(`Leo's question today, frozen by the contract at ${at}`, `Вопрос Лео сегодня, зафиксирован контрактом в ${at}`)}</b></div>
+      <p>{tr(`LEMON in existence ${fmt(o.supply as number)}, vault ${fmt(o.reserve as number)} of ${fmt(o.liabilities as number)} owed, yesterday's outflow ${pc(o.outflowPermille)}, write-off ${pc(o.writedownPermille)}, may print ${fmt(o.mintRoom as number)}, trust ${pc(o.credibility)}, ${(o.speeches ?? []).length} speeches and ${(o.rumors ?? []).length} rumours; the town's mood ${pc(o.moodPermille)} (the one figure that is the keeper's word).`,
+        `Всего LEMON ${fmt(o.supply as number)}, в сейфе ${fmt(o.reserve as number)} из ${fmt(o.liabilities as number)} долга, вчерашний отток ${pc(o.outflowPermille)}, списание ${pc(o.writedownPermille)}, можно напечатать ${fmt(o.mintRoom as number)}, доверие ${pc(o.credibility)}, речей ${(o.speeches ?? []).length}, слухов ${(o.rumors ?? []).length}; настроение города ${pc(o.moodPermille)} (единственная цифра со слов keeper).`)}</p>
+      <p className="small muted">{tr("The contract accepts only an answer the model signed to exactly this question. New speeches wait for the next bank day.", "Контракт примет только ответ, подписанный моделью именно на этот вопрос. Новые речи — со следующего банковского дня.")}</p>
+    </div>
+  );
+}
+
 /** One optional view: its value, or that this contract does not have the method, or why the read failed. */
 type Opt<T> = { state: "loading" } | { state: "missing" } | { state: "error"; error: string } | { state: "ok"; value: T };
 
 /**
- * The bank's record since the upgrade (`get_stats`) and every mint and burn it has logged (`get_supply_log`).
+ * The bank's record since it opened (`get_stats`) and every mint and burn it has logged (`get_supply_log`).
  * Both views are newer than the first deployment, so each one may be absent: the block then says so and the rest
  * of the panel is unaffected.
  */
@@ -198,7 +227,7 @@ function SupplyRecord() {
 
   return (
     <>
-      <div className="eyebrow chain-sub">{tr("The bank's record", "Рекорд банка")}{since && <> · {tr(`since the upgrade, ${since}`, `с обновления, ${since}`)}</>}</div>
+      <div className="eyebrow chain-sub">{tr("The bank's record", "Рекорд банка")}{since && <> · {tr(`since ${since}`, `с ${since}`)}</>}</div>
       {absent(stats, "The record is", "Рекорда")}
       {stats.state === "ok" && (
         <div className="record">
@@ -213,7 +242,7 @@ function SupplyRecord() {
       <div className="eyebrow chain-sub">{tr("Every mint and burn", "Каждая эмиссия и каждое сжигание")}{log.state === "ok" && log.value.length > 0 && <> · {tr(`last ${log.value.length}, newest first`, `последние ${log.value.length}, сначала новые`)}</>}</div>
       {absent(log, "The mint and burn log is", "Журнала эмиссии и сжигания")}
       {log.state === "ok" && (log.value.length === 0
-        ? <p className="muted small">{tr("No mints or burns since the upgrade yet.", "С обновления ещё не было ни эмиссии, ни сжигания.")}</p>
+        ? <p className="muted small">{tr("No mints or burns yet.", "Ещё не было ни эмиссии, ни сжигания.")}</p>
         : (
           <>
           {supply !== null && <SupplyChart log={log.value} supply={supply} />}

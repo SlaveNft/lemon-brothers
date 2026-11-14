@@ -1,9 +1,10 @@
 [package]
 name = "lemon-bank"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2021"
 description = "NEAR contract: the $LEMON token (NEP-141) and the Lemon Brothers bank, with a chair key capped by the contract."
 license = "MIT"
+repository = "https://github.com/SlaveNft/lemon-brothers"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -13,6 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 near-sdk = "5"
 bank-core = { path = "../bank-core", features = ["borsh"] }
+crisis-core = { path = "../crisis-core" }
 
 [dev-dependencies]
 near-sdk = { version = "5", features = ["unit-testing"] }

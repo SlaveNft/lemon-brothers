@@ -7,7 +7,7 @@ function memory(init: Record<string, string> = {}) {
   const m = new Map(Object.entries(init));
   return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
 }
-const SHARED: Guest = { accountId: "guest.lemonbank-587f5c93.testnet", secretKey: "ed25519:published-on-purpose" };
+const SHARED: Guest = { accountId: "guest.lemonbank-96b0974e.testnet", secretKey: "ed25519:published-on-purpose" };
 function env(createAccount: GuestNet["createAccount"], publicGuest: Guest | null, sent: Array<{ who: string; method: string }> = []): GuestEnv {
   return {
     net: { createAccount, accountExists: async () => true, call: async (g, method) => { sent.push({ who: g.accountId, method }); return { txHash: "HASH", status: { SuccessValue: "" } }; } },
@@ -48,7 +48,7 @@ describe("the shared public guest: a fallback for when the faucet refuses", () =
     expect(published.accountId).toBe(`guest.${published.contract}`);
     expect(published.secretKey.startsWith("ed25519:")).toBe(true);
     expect(published.note).toMatch(/PUBLIC ON PURPOSE/);
-    expect([...published.methods].sort()).toEqual(["advance_epoch", "airdrop", "deposit", "insure", "lobby", "rumor", "submit_run", "withdraw", "withdraw_all"]);
+    expect([...published.methods].sort()).toEqual(["advance_epoch", "airdrop", "deposit", "insure", "lobby", "rumor", "settle", "submit_run", "withdraw", "withdraw_all"]);
     expect(PUBLIC_GUEST?.accountId).toBe(published.accountId);
     expect(isPublicGuest(published.accountId)).toBe(true);
     expect(isGuestId("lemon-guest-0123abcd.testnet")).toBe(true);

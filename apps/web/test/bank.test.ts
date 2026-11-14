@@ -58,13 +58,13 @@ describe("callBank: what is sent", () => {
     }
   });
 
-  it("attaches 30 Tgas, and 100 Tgas to the two calls that may settle everyone", async () => {
+  it("attaches 30 Tgas, 60 Tgas to submit_run (the contract replays the game) and 100 Tgas to the calls that move the bank most", async () => {
     expect(DEFAULT_GAS).toBe(30n * TGAS);
-    expect(SUBMIT_GAS).toBe(30n * TGAS);
+    expect(SUBMIT_GAS).toBe(60n * TGAS);
     expect(HEAVY_GAS).toBe(100n * TGAS);
     const want: Record<string, bigint> = {
-      airdrop: 30n * TGAS, deposit: 30n * TGAS, withdraw: 30n * TGAS, lobby: 30n * TGAS, rumor: 30n * TGAS, insure: 30n * TGAS, submit_run: 30n * TGAS,
-      withdraw_all: 100n * TGAS, advance_epoch: 100n * TGAS,
+      airdrop: 30n * TGAS, deposit: 30n * TGAS, withdraw: 30n * TGAS, lobby: 30n * TGAS, rumor: 30n * TGAS, insure: 30n * TGAS, submit_run: 60n * TGAS,
+      withdraw_all: 100n * TGAS, advance_epoch: 100n * TGAS, settle: 100n * TGAS,
     };
     for (const [method, gas] of Object.entries(want)) {
       expect(gasFor(method), method).toBe(gas);
@@ -182,11 +182,13 @@ describe("callBank: what comes back", () => {
     for (const s of [null, undefined, "Started", "NotStarted", { Unknown: null }, {}, 1]) expect(isSettled(s), JSON.stringify(s)).toBe(false);
   });
 
-  it("submitRun goes through the same path: submit_run, 30 Tgas, an explicit false means 'not on the board'", async () => {
+  it("submitRun goes through the same path: submit_run with the seed and moves, 60 Tgas; the contract's own score comes back", async () => {
     const run = { seed: 123456, moves: "0n0.1r90.2m4000", score: 71, ending: "survived" as const };
-    const yes = fake({ call: () => ({ txHash: "HASH", status: { SuccessValue: b64(true) } }) });
-    expect(await submitRun(run, { env: yes.env })).toEqual({ ok: true, txHash: "HASH", accountId: GUEST.accountId, accepted: true });
-    expect(yes.sent[0]).toMatchObject({ method: "submit_run", args: run, gas: 30n * TGAS });
+    const yes = fake({ call: () => ({ txHash: "HASH", status: { SuccessValue: b64({ recorded: true, score: 64, ending: "survived" }) } }) });
+    expect(await submitRun(run, { env: yes.env })).toEqual({ ok: true, txHash: "HASH", accountId: GUEST.accountId, accepted: true, score: 64, ending: "survived" });
+    expect(yes.sent[0]).toMatchObject({ method: "submit_run", args: { seed: run.seed, moves: run.moves }, gas: 60n * TGAS });
+    const notOnBoard = fake({ call: () => ({ txHash: "HASH", status: { SuccessValue: b64({ recorded: false, score: 3, ending: "run" }) } }) });
+    expect(await submitRun(run, { env: notOnBoard.env })).toMatchObject({ ok: true, accepted: false, score: 3 });
     const no = fake({ call: () => ({ txHash: "HASH", status: { SuccessValue: b64(false) } }) });
     expect(await submitRun(run, { env: no.env })).toEqual({ ok: true, txHash: "HASH", accountId: GUEST.accountId, accepted: false });
     const empty = fake();
@@ -201,12 +203,15 @@ describe("the block's view model", () => {
 
   it("reads the balances get_account returns", () => {
     const v = bankView(ACCOUNT, STATE, NOW);
-    expect(v).toEqual({ registered: true, wallet: 480n, deposit: 503n, insured: 50n, airdropAvailable: false, empty: false, stateKnown: true, epochDue: false, epochInSec: 42, collapsed: false, earlyFee: false });
+    expect(v).toEqual({ registered: true, wallet: 480n, deposit: 503n, insured: 50n, airdropAvailable: false, empty: false, stateKnown: true, epochDue: false, epochInSec: 42, collapsed: false, earlyFee: false, earlyFeeOn: 0n, chairListened: false });
   });
 
   it("warns about the early-withdrawal fee when the contract says it applies", () => {
     expect(bankView({ ...ACCOUNT, early_fee_now: true }, STATE, NOW).earlyFee).toBe(true);
     expect(bankView({ ...ACCOUNT, early_fee_now: "true" }, STATE, NOW).earlyFee).toBe(false);
+    expect(bankView({ ...ACCOUNT, early_fee_now: true, early_fee_on: "250" }, STATE, NOW).earlyFeeOn).toBe(250n);
+    expect(bankView(ACCOUNT, { ...STATE, question_open: true }, NOW).chairListened).toBe(true);
+    expect(bankView(ACCOUNT, { ...STATE, question_open: "yes" }, NOW).chairListened).toBe(false);
   });
 
   it("writes long waits in minutes and hours", () => {

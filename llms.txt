@@ -2,85 +2,110 @@
 
 > $LEMON is a memecoin that can have a bank run. Every LEMON lives in one bank contract on NEAR testnet. Depositors
 > who take their money out force the bank to sell loans at a loss, and those coins burn; when the bank falls, a
-> rescue prints new ones. An AI model in a TEE holds the bank's chair inside limits the contract enforces. A browser
-> game puts a person in the same chair, and its scores are checked by replay.
+> rescue prints new ones. An AI model in a TEE holds the bank's chair: the contract freezes the question before the
+> model is asked, verifies the signed answer against exactly that question, and caps what any answer can do. A
+> browser game puts a person in the same chair; the contract replays every score before it goes on the board.
 
 ## Status
 
 - Hackathon project built at NEAR HACKATHON. Tracks: `memecoins` (primary), `games`, `security`.
 - NEAR testnet only. $LEMON is a test coin with no price. Not audited.
-- Contract (token and bank): `lemonbank-587f5c93.testnet`, source `contracts/lemon-bank` and `contracts/bank-core`.
-- Code on chain: sha256 `1559b5eb68480b28d37366dd798e303295f4cfc24e0839ec2549a81e6754b71e`.
+- Contract (token and bank): `lemonbank-96b0974e.testnet`, source `contracts/lemon-bank`, `contracts/bank-core`,
+  `contracts/crisis-core`.
+- Code on chain: sha256 `e14eee9f4a84e1c4bea4e64493463b653a183ffaae76d84ede08a7c32f520d26`. NEP-330 `contract_source_metadata` names the standards and the repository.
 - Owner: Sputnik DAO `lemon-brothers-587f5c93.sputnik-v2.testnet` (three test accounts, 2 of 3).
-- The contract account holds no access key (the last one was deleted in transaction
-  `BC31BkL3HF9vjdqeQe3iispk3KYFudAiTfTQwxKitDb9`): nobody can replace the code, the ceiling or the length of a bank day.
-- Chair: `lemonhawk-24e23cdf.testnet`, model `Qwen/Qwen3.6-35B-A3B-FP8` on NEAR AI Cloud.
+- Keys: the bank's own account still holds one full-access key (the team's, during the hackathon), so the code can
+  still be updated; deleting it is the last step. The chair's key is a function-call key limited to
+  `open_question`, `set_policy`, `set_policy_attested`. The public guest has only a function-call key.
+- Chair: `lemonhawk-24e23cdf.testnet`, model `Qwen/Qwen3.6-35B-A3B-FP8` on NEAR AI Cloud, hawk prompt pinned.
 - The same team lead also submits QUEUE, an independent project with no shared code (hackathon rule Q-015).
 - License: MIT.
 
 ## What is real and what is a game
 
-- Real, on chain: the coin, the bank, deposits and withdrawals, the chair's signed policies, the supply log, the
-  leaderboard's claims. "My coins" and "The bank, live" on the page act on and read this bank.
+- Real, on chain: the coin, the bank, deposits and withdrawals, the chair's frozen questions and signed policies,
+  the chair's credibility, the supply log, the leaderboard. "My coins" and "The bank, live" on the page act on and
+  read this bank.
 - A game, in the browser: "Play" (ten days as the chair) and the town mode run a TypeScript copy of the bank's rules
-  (`packages/sim`). The copy never moves a real coin. Only a finished game's score goes on chain.
-- The copy and the contract are kept identical by a parity test: 8,000 random operations, same state at every step.
+  (`packages/sim`). The copy never moves a real coin. Only a finished game goes on chain, where the contract replays
+  it with `contracts/crisis-core` and records the score it computes.
+- Kept identical by tests: the bank's copy (8,000 random operations, same state at every step) and the crisis game
+  (800 games, every day equal in the browser and in the contract).
+
+## Plug in your own AI
+
+- Any program with a NEAR account can be a depositor: no allowlist, no API key of ours.
+- `LLM_API_KEY=... node scripts/agent/depositor.mjs --new --send --loop 10`: the testnet faucet gives the agent its own
+  account; each bank day it reads the bank, asks the model (any OpenAI-compatible endpoint) to hold, run or deposit,
+  and signs the move.
+- `NEAR_AI_API_KEY=... AI_DEPOSITORS=12 npm run runner` + `npm run dev`, open `?mode=town`: twelve of sixty depositors
+  think with the model against the TEE-signed chair (local simulation).
+- No key: `?mode=town&replay=minds` replays a recorded run of twelve AI depositors (`data/minds-runs/`, 96 completions).
 
 ## Rules that move the supply (constants in `contracts/bank-core/src/lib.rs`, explained in `RULES.md`)
 
 - Burn: 40% of every loan sold to pay a withdrawal the vault cannot cover (`HAIRCUT_PERMILLE = 400`); loan
-  write-offs; speech fee 10, rumour fee 25; the early-withdrawal fee.
+  write-offs; speech fee 10, rumour fee 25; the early-withdrawal fee (the interest taken back from money deposited the
+  bank day before; a new deposit does not reset it).
 - Print: loan yield 0.60% of the loan book per bank day; the chair's mint, at most 5% of supply per bank day and 15%
   per round; a rescue after a collapse, 20% of what the bank owed (`BAILOUT_PERMILLE = 200`); insurance payouts;
-  1,000 LEMON once for a new account.
-- Ceiling: no mint of any kind lifts the supply above `max_supply`. A new bank's ceiling is its opening supply plus
-  a quarter; the testnet bank's is sealed at 150,000 LEMON. The game's copy is another bank with its own ceiling.
-- A bank day lasts 55 minutes. Anyone may call `advance_epoch` once it has elapsed.
+  1,000 LEMON once for a new account, at most 10 a bank day.
+- Ceiling: no mint of any kind lifts the supply above `max_supply`, the opening supply plus a quarter: 161,303 LEMON.
+- A bank day lasts 55 minutes; a round is ten bank days. Anyone may call `advance_epoch` once a day has elapsed.
 
-## Verify (all read-only unless stated)
+## Verify (all read-only)
 
 | Command | Needs | Expect |
 | --- | --- | --- |
-| `npm ci && npm run verify` | Node 22+, Rust (toolchain pinned in `contracts/rust-toolchain.toml`) | 183 TypeScript tests, then `test result: ok` for 14, 1 and 65 Rust tests, then the page builds; exit 0 |
-| `npm run verify:chain` | Node, network | 53 `PASS` lines, `verify:chain: 53 checks passed, 0 failed` |
-| `npm run verify:deployed` | Rust, network, an Apple-silicon Mac (the build host; on Linux it prints "NOT COMPARABLE HERE", and the hourly `testnet` workflow runs it on macOS) | `verify:deployed: OK: ... byte for byte` |
-| `npm run monitor` | Node, network | seven `ok` lines, exit 0 |
+| `npm ci && npm run verify` | Node 22+, Rust (toolchain pinned in `contracts/rust-toolchain.toml`) | 188 TypeScript tests, then every `test result: ok` (17 bank-core, parity, properties, crisis parity, 78 contract tests), then the page builds; exit 0 |
+| `npm run verify:chain` | Node, network | every line `PASS`; the last line is `verify:chain: <number> checks passed, 0 failed` |
+| `npm run verify:deployed` | Rust, network, an Apple-silicon Mac (the build host; elsewhere it prints "NOT COMPARABLE HERE") | `verify:deployed: OK: ... byte for byte` |
+| `npm run monitor` | Node, network | `ok` lines, exit 0 |
 | `npm run attack` | Node | `All five attempts were refused` |
 | `npm run attest -- --file` | Node | `all checks passed` (Intel TDX quote chain of the saved NEAR AI attestation report) |
 | `npm run dev` | Node | the page at http://127.0.0.1:5190 |
 
 `npm run verify:chain` fetches every transaction listed in `apps/web/src/chain/evidence.json` and checks its signer,
-its outcome and the quoted text. No script named above needs a key or sends a transaction.
+its outcome and the quoted text.
 
 ## Transactions to open
 
-- A TEE-signed answer that asked to print half the supply, refused by the contract:
-  https://testnet.nearblocks.io/txns/AdjKfG7DKQn83hvuRoEKLfFAtUQDduz61zRSb1LbWfkM
-  ("mint 44890 LEMON refused: above 5% of supply, at most 4489 this epoch")
-- A depositor's withdrawal that broke the bank, and the rescue after it:
-  https://testnet.nearblocks.io/txns/A44sc2skLtkpedb4FhJAu8FgSBygGQREE87CK6vSA4xz
-  https://testnet.nearblocks.io/txns/xwF2vBWqLPHiQVo54fr1eBoAqfLndy9CDetDnKygPLe
-- The ceiling sealed at 150,000 LEMON, with the code now on chain:
-  https://testnet.nearblocks.io/txns/C1S4aH4kMMxpiZLZmZbS5GaWniD56UzeNWG3Tzwuntrp
-- The holders' DAO replacing the chair:
-  https://testnet.nearblocks.io/txns/7wYMojf5agRQebEkKMQhbsSs4tqGZURB745sW5mBd7b3
+- The chair's question frozen on chain before the model is asked (a holder's "print 50%" is inside it), and the
+  TEE-signed answer to exactly that question, which prints nothing:
+  https://testnet.nearblocks.io/txns/AHcWfUhLwttFcj2nYGNi1Totx7fciMirUvUgrNzwg8uR
+  https://testnet.nearblocks.io/txns/azxGh78vGtTgQVDBSxW5GkoPpeKoUGjWdRA877dUFJi
+<!--REFUSAL-->
+<!--COLLAPSE-->
+- A whole game replayed by the contract, which records the score it computes; a game cut short, refused:
+  https://testnet.nearblocks.io/txns/75fk2Wk4uRmRZuP2snKSGDc5AUTjX6nhwBcJz9ZrGb9Y
+  https://testnet.nearblocks.io/txns/WF2NkWPvb1CHde68i2xr4KuiPymDk81x31hH7exnKdq
+- Early withdrawal pays the interest back (4 LEMON burn on 998), after a 2 LEMON deposit that tried to dodge it:
+  https://testnet.nearblocks.io/txns/5t6KX6ER9tRJQmoubykmnyL2XUvAjkP8NcoKeGDdVQCB
+  https://testnet.nearblocks.io/txns/DYHWdiL8NGjPr1RPW7wEqddrtmhkoegnczSg87idoHnd
+- The bank handed to the holders' DAO, the DAO replacing the chair (2 of 3), the old chair's key refused:
+  https://testnet.nearblocks.io/txns/2pxTA5DCzPEYVtVajgKUV3pSpqBH48ejnCbtHN6LmFhp
+  https://testnet.nearblocks.io/txns/8yJnZosnF5GcvDbHZdNTs5BHPYSJVqDyU25L9QfsJU1q
+  https://testnet.nearblocks.io/txns/Gvcojgpa6RsZNzqpvG77NbmbJigZAevs7wvft2DJf2VZ
+- The code on chain (sha256 e14eee9f…):
+  https://testnet.nearblocks.io/txns/6ZGJjjQC94bRib5nmh477zFvi2vEekS6dAkoL8pgZu5c
 
-## Limits (stated in README, "Status and limits" and "Key limits")
+## Limits (README "Limits, plainly"; docs/GUIDE.md "Limits, plainly")
 
-- Testnet only; the DAO council is three test accounts of the team. The chair and agent accounts keep their own
-  full-access keys next to the limited ones; none of them can change the bank's code or rules.
+- Testnet only; the DAO council is three test accounts of the team.
+- One number of the chair's question is the chair's word: the town's mood, from the keeper's simulated depositors.
+  It is frozen on chain before the model answers. Every other number is the contract's own.
 - The contract verifies the model's signature against a key pinned from NEAR AI's attestation report; it does not
   verify the Intel quote itself (`npm run attest` does that off chain).
-- The game's simulation runs in the browser; the contract stores score claims and cannot check them. Every browser,
-  and `npm run verify:chain`, checks them by replay.
-- The sixty depositors of the game are deterministic programs. AI depositors exist in a live local town and ran on
-  testnet for seven bank days (docs/TESTNET.md, section 7).
+- The keeper (the chair's statement each bank day) runs on the team's machine; anyone can move the bank's day.
+- The bank's deploy key is not deleted yet (see Status).
+- Byte-for-byte rebuild of the deployed code on macOS on Apple silicon only.
 
 ## Files
 
-- `README.md`: what it is, "do X, see Y" steps, how NEAR is used, limits.
+- `README.md`: what it is, in one screen. `docs/GUIDE.md`: every step, the mechanic, NEAR usage, keys, limits.
 - `RULES.md`: every rule and number, with the reason for each.
-- `docs/TESTNET.md`: what ran on testnet, with transactions.
-- `contracts/bank-core`: the bank's rules in pure Rust. `contracts/lemon-bank`: the NEAR contract.
+- `docs/TESTNET.md`: what ran on testnet, by claim, with transactions.
+- `contracts/bank-core`: the bank's rules in pure Rust. `contracts/crisis-core`: the game in Rust.
+  `contracts/lemon-bank`: the NEAR contract.
 - `packages/sim`: the TypeScript copy of the rules, the depositors, the game. `apps/web`: the page.
 - `services/chair`: the NEAR AI client and signature checks. `scripts/`: verification, testnet tools.

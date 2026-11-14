@@ -21,12 +21,14 @@ import { GUEST_EVENT, GUEST_STORAGE_KEY, PUBLIC_GUEST, isGuestId } from "./bankV
 /** The official testnet account helper: POST { newAccountId, newAccountPublicKey } creates and funds the account. */
 export const HELPER_URL = "https://helper.testnet.near.org/account";
 export const GUEST_KEY = GUEST_STORAGE_KEY; // "chair.guest"
-export const SUBMIT_GAS = 30_000_000_000_000n; // 30 Tgas
+/** `submit_run` replays the whole crisis inside the contract (about 16 Tgas on testnet). */
+export const SUBMIT_GAS = 60_000_000_000_000n; // 60 Tgas
 /** Gas for an ordinary call on the bank. */
-export const DEFAULT_GAS = SUBMIT_GAS;
-/** Gas for the two calls that may settle every depositor at once (a collapse): `advance_epoch` and `withdraw_all`. */
+export const DEFAULT_GAS = 30_000_000_000_000n; // 30 Tgas
+/** Gas for the calls that move the bank the most: `advance_epoch`, `withdraw_all` (which can end in a collapse), `settle`. */
 export const HEAVY_GAS = 100_000_000_000_000n; // 100 Tgas
-export const gasFor = (method: string): bigint => (method === "advance_epoch" || method === "withdraw_all" ? HEAVY_GAS : DEFAULT_GAS);
+export const gasFor = (method: string): bigint =>
+  method === "submit_run" ? SUBMIT_GAS : method === "advance_epoch" || method === "withdraw_all" || method === "settle" ? HEAVY_GAS : DEFAULT_GAS;
 /**
  * How long a send waits. EXECUTED_OPTIMISTIC: the transaction is in a block and its receipts have run, so the
  * answer carries the outcome (SuccessValue or the contract's panic), but the block is not final yet. That is two or
@@ -37,6 +39,7 @@ export const WAIT_UNTIL = "EXECUTED_OPTIMISTIC" as const;
 
 export interface Guest { accountId: string; secretKey: string }
 export type RunEnding = "survived" | "run" | "impeached" | "hyperinflation";
+/** A finished crisis as the browser played it; the contract replays `moves` and scores it itself. */
 export interface RunResult { seed: number; moves: string; score: number; ending: RunEnding }
 
 /** The network, as the guest logic sees it. */
@@ -45,8 +48,8 @@ export interface GuestNet {
   createAccount(accountId: string, publicKey: string): Promise<{ status: number; text: string }>;
   /** Is the account on chain? Rejects when the RPC cannot be reached. */
   accountExists(accountId: string): Promise<boolean>;
-  /** Sign a function call on the bank with the guest's key, send it and wait for the outcome (its `status` object). Gas defaults to `gasFor(method)`. */
-  call(guest: Guest, method: string, args: object, gas?: bigint): Promise<{ txHash: string; status: unknown }>;
+  /** Sign a function call on the bank with the guest's key, send it and wait for the outcome (its `status` object). Gas defaults to `gasFor(method)`; `deposit` is yoctoNEAR attached (default none). */
+  call(guest: Guest, method: string, args: object, gas?: bigint, deposit?: bigint): Promise<{ txHash: string; status: unknown }>;
 }
 export interface GuestEnv {
   net: GuestNet;
@@ -155,13 +158,13 @@ export async function ensureGuest(env: GuestEnv = browserEnv()): Promise<Guest> 
 
 // ------------------------------------------------------------------ the claim
 
-/** The arguments of `submit_run`, or a GuestError if the result is not one the contract could take. */
-export function submitArgs(r: RunResult): { seed: number; moves: string; score: number; ending: RunEnding } {
+/** The arguments of `submit_run` (the seed and the moves: the contract computes the score), or a GuestError. */
+export function submitArgs(r: RunResult): { seed: number; moves: string } {
   if (!Number.isSafeInteger(r.seed) || r.seed <= 0) throw new GuestError("bad-result", "seed");
   if (!Number.isInteger(r.score) || r.score < 0 || r.score > 100) throw new GuestError("bad-result", "score");
   if (typeof r.moves !== "string" || !/^[0-9nrtmg.]{1,200}$/.test(r.moves)) throw new GuestError("bad-result", "moves");
   if (!["survived", "run", "impeached", "hyperinflation"].includes(r.ending)) throw new GuestError("bad-result", "ending");
-  return { seed: r.seed, moves: r.moves, score: r.score, ending: r.ending };
+  return { seed: r.seed, moves: r.moves };
 }
 
 const GONE = /does not exist|UNKNOWN_ACCOUNT|AccountDoesNotExist|SignerDoesNotExist|UNKNOWN_ACCESS_KEY|AccessKeyDoesNotExist|AccessKeyNotFound|InvalidAccessKey/i;
@@ -187,8 +190,8 @@ export function sendError(e: unknown): GuestError {
 
 export type SubmitStage = "guest" | "sending";
 export type SubmitOutcome =
-  /** `accepted` is what `submit_run` returned: false means the claim was recorded as not good enough for the board. */
-  | { ok: true; txHash: string; accountId: string; accepted: boolean }
+  /** `accepted`: the run made the board; `score` and `ending` are what the contract computed by replaying it. */
+  | { ok: true; txHash: string; accountId: string; accepted: boolean; score?: number; ending?: string }
   | { ok: false; error: string; code: GuestErrorCode; txHash?: string };
 
 export type CallOutcome =
@@ -199,8 +202,10 @@ export type CallOutcome =
 export interface CallOptions {
   env?: GuestEnv;
   onStage?: (s: SubmitStage) => void;
-  /** Gas to attach; default `gasFor(method)`: 30 Tgas, 100 Tgas for `advance_epoch` and `withdraw_all`. */
+  /** Gas to attach; default `gasFor(method)`. */
   gas?: bigint;
+  /** yoctoNEAR to attach: the storage price on a newcomer's `airdrop` (a function-call key cannot attach any). */
+  deposit?: bigint;
   /**
    * May this call make a guest account (through the faucet) when there is none, or replace a stored one that is
    * gone from the chain? Default true. With false both cases are the error "gone" and nothing new is created.
@@ -236,7 +241,9 @@ export async function callBank(method: string, args: object = {}, opts: CallOpti
     stage("sending");
     let out: { txHash: string; status: unknown };
     for (;;) {
-      try { out = await env.net.call(guest, method, args, gas); break; }
+      // the shared public guest signs with a function-call key, which cannot attach NEAR; it is registered already
+      const deposit = opts.deposit && opts.deposit > 0n && guest.accountId !== env.publicGuest?.accountId ? opts.deposit : undefined;
+      try { out = await env.net.call(guest, method, args, gas, deposit); break; }
       catch (e) {
         if (!GONE.test(String((e as Error)?.message ?? e))) throw sendError(e);
         if (fresh) throw new GuestError("not-ready");
@@ -258,15 +265,22 @@ export async function callBank(method: string, args: object = {}, opts: CallOpti
 }
 
 /**
- * Put a finished crisis on chain from the guest account (`submit_run` through `callBank`). Never throws.
- * `submit_run` returns a JSON boolean: only an explicit `false` counts as "did not make the board".
+ * Put a finished crisis on chain from the guest account (`submit_run` through `callBank`). Never throws. The contract
+ * replays the moves and returns `{ recorded, score, ending }`: only an explicit `recorded: false` (or the older
+ * contract's bare `false`) counts as "did not make the board".
  */
 export async function submitRun(result: RunResult, opts: { env?: GuestEnv; onStage?: (s: SubmitStage) => void } = {}): Promise<SubmitOutcome> {
   let args: ReturnType<typeof submitArgs>;
   try { args = submitArgs(result); }
   catch (e) { const g = sendError(e); return { ok: false, error: g.message, code: g.code }; }
   const out = await callBank("submit_run", args, { env: opts.env, onStage: opts.onStage });
-  return out.ok ? { ok: true, txHash: out.txHash, accountId: out.accountId, accepted: out.value !== false } : out;
+  if (!out.ok) return out;
+  const v = out.value as { recorded?: unknown; score?: unknown; ending?: unknown } | boolean | undefined;
+  const verdict = v && typeof v === "object" ? v : null;
+  return {
+    ok: true, txHash: out.txHash, accountId: out.accountId, accepted: v !== false && verdict?.recorded !== false,
+    ...(typeof verdict?.score === "number" ? { score: verdict.score } : {}), ...(typeof verdict?.ending === "string" ? { ending: verdict.ending } : {}),
+  };
 }
 
 // ------------------------------------------------------------------ the real network
@@ -297,9 +311,9 @@ export function browserNet(): GuestNet {
       try { await rpc("query", { request_type: "view_account", finality: "final", account_id: accountId }); return true; }
       catch (e) { if (/UNKNOWN_ACCOUNT|does not exist/i.test(String((e as Error).message))) return false; throw e; }
     },
-    async call(guest, method, args, gas) {
+    async call(guest, method, args, gas, deposit) {
       const signer = KeyPairSigner.fromSecretKey(guest.secretKey as KeyPairString);
-      const action = actions.functionCall(method, args, gas ?? gasFor(method), 0n);
+      const action = actions.functionCall(method, args, gas ?? gasFor(method), deposit ?? 0n);
       // sign once (the nonce and a recent block come from whichever endpoint answers first) ...
       let signed, last: unknown;
       for (const p of providers) {

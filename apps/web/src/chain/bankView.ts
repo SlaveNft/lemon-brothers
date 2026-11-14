@@ -74,6 +74,7 @@ export function speechArg(input: string): string | null {
  */
 export const bankArgs = {
   airdrop: () => ({}),
+  settle: (accountIds: string[]) => ({ account_ids: accountIds }),
   deposit: (amount: string) => ({ amount }),
   withdraw: (amount: string) => ({ amount }),
   withdraw_all: () => ({}),
@@ -123,8 +124,12 @@ export interface BankView {
   epochInSec: number | null;
   /** The bank has fallen and is closed until the bailout (deposits and insurance are refused). */
   collapsed: boolean;
-  /** Taking money out now pays the early-withdrawal fee (the latest deposit was made in the previous bank day). */
+  /** Some of the deposit went in during the previous bank day: taking that part out now pays the early-withdrawal fee. */
   earlyFee: boolean;
+  /** LEMON of the deposit that pays the fee if taken out now (yesterday's money; today's comes out first, free). */
+  earlyFeeOn: bigint;
+  /** The chair has frozen this bank day's question: new speeches and rumours wait for the next bank day. */
+  chairListened: boolean;
 }
 
 /** "45 s", "12 min", "1 h 5 min" for a wait in whole seconds. */
@@ -143,7 +148,8 @@ export function waitText(sec: number, ru: boolean): string {
 export function bankView(account: unknown, state: unknown, nowMs: number): BankView {
   const a = isObj(account) ? account : null;
   const s = isObj(state) ? state : null;
-  const wallet = lemon(a?.wallet), deposit = lemon(a?.deposit_value), insured = lemon(a?.insured);
+  // what a past collapse owes the account is its money too: the contract pays it into the wallet on the next call
+  const wallet = lemon(a?.wallet) + lemon(a?.owed), deposit = lemon(a?.deposit_value), insured = lemon(a?.insured);
   const epochInSec = s ? secondsToEpoch(s.next_epoch_ms, nowMs) : null;
   return {
     registered: a !== null,
@@ -155,5 +161,7 @@ export function bankView(account: unknown, state: unknown, nowMs: number): BankV
     epochInSec,
     collapsed: s?.collapsed === true,
     earlyFee: a?.early_fee_now === true,
+    earlyFeeOn: lemon(a?.early_fee_on),
+    chairListened: s?.question_open === true,
   };
 }

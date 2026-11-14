@@ -25,7 +25,7 @@
     "testnet:keeper": "tsx scripts/testnet/keeper.ts",
     "testnet:onair": "node scripts/testnet/onair.mjs",
     "build:contract": "cd contracts && cargo build -p lemon-bank --target wasm32-unknown-unknown --release",
-    "testnet:upgrade": "tsx scripts/testnet/upgrade.mjs",
+    "testnet:pin": "tsx scripts/testnet/pin.mjs",
     "testnet:verify": "node scripts/testnet/verify.mjs",
     "verify:deployed": "bash scripts/verify-deployed.sh",
     "verify:chain": "tsx scripts/verify-chain.ts",

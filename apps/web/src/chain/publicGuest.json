@@ -1,8 +1,8 @@
 {
   "note": "PUBLIC ON PURPOSE. A NEAR testnet function-call access key: it can only call the listed methods on the bank contract, cannot move NEAR, add keys or deploy code, and the account has no full-access key. The page uses it when the testnet faucet refuses to create a personal guest account. Test tokens only; see scripts/testnet/public-guest.mjs.",
-  "contract": "lemonbank-587f5c93.testnet",
-  "accountId": "guest.lemonbank-587f5c93.testnet",
-  "secretKey": "ed25519:5Tfca2XoxzvNRbpWFmzhmvmFg2dghYj2EcoBat32aYB1b3kEbejWgpFgraLq3i1HXESZ17QveXo2qMEmybJh7Qgf",
+  "contract": "lemonbank-96b0974e.testnet",
+  "accountId": "guest.lemonbank-96b0974e.testnet",
+  "secretKey": "ed25519:CBhSwFVP2uryXq71MCPU41KCA7uMrTeu1wLiykuU67sRMknVGjBtu4JVXf35jSi6ZqeVXBejtwtjcS6cPrhNdbF",
   "methods": [
     "airdrop",
     "deposit",
@@ -12,7 +12,8 @@
     "rumor",
     "insure",
     "advance_epoch",
-    "submit_run"
+    "submit_run",
+    "settle"
   ],
   "allowanceNear": 4
 }

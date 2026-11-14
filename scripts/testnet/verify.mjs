@@ -16,7 +16,7 @@ import { actions } from "near-api-js";
 import { TGAS, account, failureText, readState, sendTx, view } from "./common.mjs";
 
 const st = readState();
-const bank = account(st.contract), key = account(st.chair, "policy");
+const bank = account(st.contract), key = account(st.chair, st.policyLabel ?? "policy");
 const s = await view(bank, st.contract, "get_state");
 console.log(`state: supply ${s.supply}, reserve ${s.reserve}, liabilities ${s.liabilities}, round ${s.round}.${s.epoch}, chair ${s.chair}, pinned key ${s.chair_signer ?? "none"}`);
 const half = String(Math.floor(Number(s.supply) / 2));
@@ -28,7 +28,7 @@ for (const [label, act, as] of [
   ["chair key calls withdraw_all", actions.functionCall("withdraw_all", {}, 30n * TGAS, 0n)],
   ...(st.oldChairs ?? []).map((old) => [`impeached chair ${old} tries to set policy`, actions.functionCall("set_policy_attested", { request: "{}", response: "{}", signature: "00" }, 30n * TGAS, 0n), old]),
 ]) {
-  try { const r = await sendTx(as ? account(as, "policy") : key, st.contract, [act], label); console.log(`UNEXPECTED: ${label} succeeded ${r.hash}`); }
+  try { const r = await sendTx(as ? account(as, st.policyLabel ?? "policy") : key, st.contract, [act], label); console.log(`UNEXPECTED: ${label} succeeded ${r.hash}`); }
   catch (e) { console.log(`${label}: rejected${e.hash ? ` (tx ${e.hash})` : ""}: ${failureText(e).slice(0, 260)}`); }
 }
 const s2 = await view(bank, st.contract, "get_state");

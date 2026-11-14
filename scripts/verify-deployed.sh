@@ -2,7 +2,7 @@
 # Rebuild the bank contract from this repository and compare it, byte for byte, with the code deployed on NEAR
 # testnet. Read-only: no keys, no transactions.
 #
-#   npm run verify:deployed [-- <account id>]        (default: lemonbank-587f5c93.testnet)
+#   npm run verify:deployed [-- <account id>]        (default: lemonbank-96b0974e.testnet)
 #
 # Why the extra flags. A release wasm keeps the source paths of its dependencies in its panic messages, and those
 # paths start with the cargo home of whoever built it (the script prints the deployer's as "deployed from"). The same
@@ -18,7 +18,7 @@
 # other host the script says so instead of reporting a mismatch as a failure of the source.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ACCOUNT="${1:-lemonbank-587f5c93.testnet}"
+ACCOUNT="${1:-lemonbank-96b0974e.testnet}"
 
 CHAIN="$(ACCOUNT="$ACCOUNT" node --input-type=module -e '
 import { createHash } from "node:crypto";

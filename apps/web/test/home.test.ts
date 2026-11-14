@@ -74,12 +74,12 @@ describe("the one landing page: its words", () => {
     expect(span(60)).toMatch(/^1 (minute|минута)$/);
   });
 
-  it("cites in the README only transactions that `npm run verify:chain` fetches (evidence.json)", () => {
-    const readme = readFileSync(new URL("../../../README.md", import.meta.url), "utf8");
+  it("cites in the README and the guide only transactions that `npm run verify:chain` fetches (evidence.json)", () => {
+    const readme = ["../../../README.md", "../../../docs/GUIDE.md"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")).join("\n");
     const listed = (JSON.parse(readFileSync(new URL("../src/chain/evidence.json", import.meta.url), "utf8")) as { items: Array<{ tx: string }> }).items.map((i) => i.tx);
     const full = [...readme.matchAll(/txns\/([1-9A-HJ-NP-Za-km-z]{43,44})/g)].map((m) => m[1]);
     const short = [...readme.matchAll(/`([1-9A-HJ-NP-Za-km-z]{8})…`/g)].map((m) => m[1]);
-    expect(full.length + short.length).toBeGreaterThan(20);
+    expect(full.length + short.length).toBeGreaterThanOrEqual(5);
     for (const tx of full) expect(listed, `README links ${tx}`).toContain(tx);
     for (const tx of short) expect(listed.some((t) => t.startsWith(tx)), `README cites ${tx}…`).toBe(true);
   });

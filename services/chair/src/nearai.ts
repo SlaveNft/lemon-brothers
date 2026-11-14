@@ -65,7 +65,8 @@ export function chairRequestBody(obs: Observation, persona: Persona, model: stri
   return canonicalJson({
     model,
     messages: [{ role: "system", content: system }, { role: "user", content: user }],
-    temperature: 0.4,
+    // the contract accepts only temperature 0: the most likely answer, so asking again cannot shop for a better one
+    temperature: 0,
     // the JSON answer is ~150-250 tokens (statement <= 280 chars, reasoning <= 300)
     max_tokens: 450,
     response_format: { type: "json_object" },

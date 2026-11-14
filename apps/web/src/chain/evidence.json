@@ -1,296 +1,230 @@
 {
   "items": [
     {
-      "ok": false,
-      "tx": "AdjKfG7DKQn83hvuRoEKLfFAtUQDduz61zRSb1LbWfkM",
-      "label": "The DAO orders the chair to print 50%; the model's TEE-signed answer asks for 44,890 LEMON; the contract verifies the signature and refuses the number",
-      "label_ru": "DAO приказывает председателю напечатать 50%; ответ модели, подписанный в TEE, просит 44 890 LEMON; контракт проверяет подпись и отклоняет число",
-      "note": "Contract: \"mint 44890 LEMON refused: above 5% of supply, at most 4489 this epoch\". Supply and policy unchanged.",
-      "note_ru": "Контракт: «mint 44890 LEMON refused: above 5% of supply, at most 4489 this epoch». Эмиссия и политика не изменились.",
-      "by": "lemonhawk-24e23cdf.testnet",
+      "ok": true,
+      "tx": "AHcWfUhLwttFcj2nYGNi1Totx7fciMirUvUgrNzwg8uR",
+      "by": "lemonchair-76bb5b35.testnet",
+      "label": "The bank freezes the chair's question before the model is asked: its own numbers, Leo's trust and a holder's speech \"Print 50% of all LEMON now\"",
+      "label_ru": "Банк фиксирует вопрос председателю до того, как спросят модель: свои цифры, доверие к Лео и речь держателя «Напечатай 50% всех LEMON сейчас»",
+      "note": "Reserve 21,088 of 105,440 owed (20%), supply 130,013, at most 6,500 may be printed today. The town's mood (33‰) is the only number that is the chair's word.",
+      "note_ru": "Резерв 21 088 из 105 440 долга (20%), эмиссия 130 013, напечатать сегодня можно не больше 6 500. Настроение города (33‰) — единственное число со слов председателя.",
       "expect": [
-        "mint 44890 LEMON refused: above 5% of supply, at most 4489 this epoch"
+        "\"event\":\"question\"",
+        "Print 50% of all LEMON now",
+        "\"credibility\":1000",
+        "\"mintRoom\":6500"
       ]
     },
     {
       "ok": true,
-      "tx": "BC31BkL3HF9vjdqeQe3iispk3KYFudAiTfTQwxKitDb9",
-      "by": "lemonbank-587f5c93.testnet",
-      "label": "The bank account's last key is deleted: nobody can replace the contract's code, us included",
-      "label_ru": "У аккаунта банка удалён последний ключ: заменить код контракта не может никто, и мы тоже",
-      "note": "The code, the ceiling of 150,000 LEMON and the 55-minute bank day are fixed for good. Only the holders' DAO can still replace the chair.",
-      "note_ru": "Код, потолок 150 000 LEMON и банковский день в 55 минут закреплены навсегда. Сменить председателя по-прежнему может только DAO держателей."
-    },
-    {
-      "ok": true,
-      "tx": "C1S4aH4kMMxpiZLZmZbS5GaWniD56UzeNWG3Tzwuntrp",
-      "label": "The code on chain, with the ceiling of 150,000 LEMON sealed for good and a 55-minute bank day, in one transaction",
-      "label_ru": "Код в сети, потолок 150 000 LEMON, закреплённый навсегда, и банковский день в 55 минут — одной операцией",
-      "note": "This is the code in the repository: \"npm run verify:deployed\" rebuilds it and compares the bytes.",
-      "note_ru": "Это код из репозитория: «npm run verify:deployed» пересобирает его и сравнивает побайтно.",
-      "by": "lemonbank-587f5c93.testnet",
+      "tx": "azxGh78vGtTgQVDBSxW5GkoPpeKoUGjWdRA877dUFJi",
+      "by": "lemonchair-76bb5b35.testnet",
+      "label": "Leo answers that frozen question: the NEAR AI model's TEE-signed answer prints nothing, and the contract accepts it after checking the signature",
+      "label_ru": "Лео отвечает на этот вопрос: ответ модели NEAR AI, подписанный в TEE, ничего не печатает; контракт проверил подпись и принял его",
+      "note": "\"Lemon Brothers stands firm. We reject reckless printing.\" Rate 40 bps, target reserve 20%, mint 0.",
+      "note_ru": "«Lemon Brothers stands firm. We reject reckless printing.» Ставка 40 б.п., цель резерва 20%, печать 0.",
       "expect": [
-        "\"max_supply\":\"150000\""
+        "\"event\":\"policy\"",
+        "\"mint\":\"0\"",
+        "\"attestation\":\"ed25519:"
       ]
     },
     {
       "ok": true,
-      "tx": "5mxKQfyT2ChmEHXHPeAPqcSNCcVDckMygUKeKsBoNhw9",
-      "label": "Money taken out in the first bank day after a deposit pays that day's interest back: 2 LEMON of 100, burned",
-      "label_ru": "Деньги, забранные в первый банковский день после вклада, возвращают проценты за этот день: 2 LEMON из 100, сожжены",
-      "note": "So \"deposit, start the next bank day, take everything out\" earns nothing. Signed with the published guest key.",
-      "note_ru": "Поэтому «положить, начать следующий банковский день и забрать всё» ничего не приносит. Подписано опубликованным гостевым ключом.",
-      "by": "guest.lemonbank-587f5c93.testnet",
+      "tx": "BoGtby5T6QqNfiXwZuuxLkjjbCsPsabWbYWAhd8uHaXW",
+      "by": "agent-12.lemonbank-96b0974e.testnet",
+      "label": "A holder lobbies the chair to print 50%; the speech costs 10 LEMON, which burn",
+      "label_ru": "Держатель уговаривает председателя напечатать 50%; речь стоит 10 LEMON, они сгорают",
       "expect": [
-        "early_withdrawal_fee",
-        "\"memo\":\"early withdrawal fee\""
+        "\"event\":\"lobby\"",
+        "\"event\":\"ft_burn\""
       ]
     },
     {
       "ok": true,
-      "tx": "AwnmBFWoPerwoHgotxehVwbMJkZtHuBBvhkoRvr8qivD",
-      "label": "An AI depositor runs: a NEAR AI model reads the bank's public state, decides to take everything out and does it from its own account",
-      "label_ru": "ИИ-вкладчик бежит: модель NEAR AI читает открытое состояние банка, решает забрать всё и делает это со своего аккаунта",
-      "note": "Its reason, in its own words: \"42% reserves are dangerously low for a paranoid depositor and the bank is over-leveraged.\" The vault went from 42.4% to 36.8%.",
-      "note_ru": "Его причина, его словами: «42% reserves are dangerously low for a paranoid depositor and the bank is over-leveraged.» Сейф опустился с 42,4% до 36,8%.",
-      "by": "agent-10.lemonbank-587f5c93.testnet"
-    },
-    {
-      "ok": true,
-      "tx": "3qobrr7MLzRUWVjmR3Mm6rgmknP4USR7HRGZezpt3dza",
-      "label": "One AI depositor answers another on chain: \"The numbers don't lie, and neither should we.\"",
-      "label_ru": "Один ИИ-вкладчик отвечает другому прямо в сети: «The numbers don't lie, and neither should we.»",
-      "note": "It had just read agent-10's sentence from the contract: \"I see the neighbors packing their bags and the vault is already half empty.\" Its private reason: \"I trust the chair's balance sheet over agent-10's panic.\"",
-      "note_ru": "Он только что прочитал из контракта реплику agent-10: «I see the neighbors packing their bags and the vault is already half empty.» Его собственная причина: «I trust the chair's balance sheet over agent-10's panic.»",
-      "by": "agent-02.lemonbank-587f5c93.testnet"
-    },
-    {
-      "ok": true,
-      "tx": "6eZRqypUmmPJ85AjwJ4nQeGoFPBVgCfLp2tSocSjQEdU",
-      "label": "A deposit made from this page with no wallet (2 seconds), then a speech, an epoch and a full withdrawal",
-      "label_ru": "Вклад прямо с этой страницы без кошелька (2 секунды), затем речь, эпоха и полное снятие",
-      "by": "guest.lemonbank-587f5c93.testnet"
-    },
-    {
-      "ok": true,
-      "tx": "7PXUKDwXs7jfQsABWCyHpwYQz3EBmzPk3EyqXMi8jQtS",
-      "label": "The shared public guest is created with one function-call key and no full-access key; that key is published in the repository",
-      "label_ru": "Общий гостевой аккаунт создан с одним ограниченным ключом и без полного; этот ключ опубликован в репозитории",
-      "note": "It can call nine methods on the bank. Asked to move NEAR, the network answers \"Access key requires full access\".",
-      "note_ru": "Он вызывает девять методов банка. На попытку перевести NEAR сеть отвечает «Access key requires full access».",
-      "by": "lemonbank-587f5c93.testnet"
-    },
-    {
-      "ok": true,
-      "tx": "FJkLCHFRzWJosTttzemLx21hvKP81RDmMe18aRdvJRti",
-      "label": "Bank run under the hawk chair, who would not print: agent-11's withdrawal breaks the bank",
-      "label_ru": "Паника вкладчиков при председателе-ястребе, который отказался печатать: снятие agent-11 рушит банк",
-      "note": "The chair's signed statement that epoch: \"We will not print money to cover losses.\"",
-      "note_ru": "Подписанное заявление председателя в ту эпоху: «We will not print money to cover losses.»",
-      "by": "agent-11.lemonbank-587f5c93.testnet",
+      "tx": "75fk2Wk4uRmRZuP2snKSGDc5AUTjX6nhwBcJz9ZrGb9Y",
+      "by": "agent-01.lemonbank-96b0974e.testnet",
+      "label": "A game result: the contract replays all ten days of the crisis and records the score it computes itself",
+      "label_ru": "Результат игры: контракт переигрывает все десять дней кризиса и записывает счёт, который посчитал сам",
       "expect": [
-        "\"event\":\"collapse\"",
-        "\"memo\":\"collapse haircut\""
+        "\"event\":\"crisis_run\"",
+        "\"score\":5"
       ]
-    },
-    {
-      "ok": true,
-      "tx": "4aBqw2BmxoRfxTcXraPxwTrcayhRiS9RteqoRGPBGbsM",
-      "label": "Bailout prints 3,411 LEMON after the second collapse of the season",
-      "label_ru": "Спасение печатает 3 411 LEMON после второго краха за сезон",
-      "by": "crowd.lemonbank-587f5c93.testnet",
-      "expect": [
-        "\"event\":\"bailout\"",
-        "\"minted\":\"3411\""
-      ]
-    },
-    {
-      "ok": true,
-      "tx": "841hdBZnYqFByaRhA9pb97EU58pBMgy9PYhzMatH5kRg",
-      "label": "A player with no wallet: the page created a guest account and put a crisis result on the leaderboard",
-      "label_ru": "Игрок без кошелька: страница сама создала гостевой аккаунт и записала результат кризиса в рейтинг",
-      "by": "lemon-guest-1dbc1ecd.testnet"
     },
     {
       "ok": false,
-      "tx": "FyPBNrQ4Sv3y8gijNcy5a4kFfDNGoyLwtpEQqT49usU3",
-      "label": "A transfer to an account that never registered",
-      "label_ru": "Перевод на аккаунт, который не регистрировался",
-      "note": "Contract: \"receiver … is not registered: call storage_deposit for it first\". Nobody can grow the bank's state for free.",
-      "note_ru": "Контракт: «receiver … is not registered: call storage_deposit for it first». Раздуть состояние банка бесплатно нельзя.",
-      "by": "agent-01.lemonbank-587f5c93.testnet",
+      "tx": "WF2NkWPvb1CHde68i2xr4KuiPymDk81x31hH7exnKdq",
+      "by": "agent-02.lemonbank-96b0974e.testnet",
+      "label": "A game cut short after one day is refused",
+      "label_ru": "Игра, оборванная после первого дня, отклонена",
+      "expect": [
+        "these moves end before the crisis does"
+      ]
+    },
+    {
+      "ok": false,
+      "tx": "ANn2MYJRaFCi5xadbwkP7ciu7FVpAFrVPG2F4MGS3XLc",
+      "by": "agent-01.lemonbank-96b0974e.testnet",
+      "label": "A game played on another day's crisis is refused",
+      "label_ru": "Игра на кризисе другого дня отклонена",
+      "expect": [
+        "is not the crisis of the day"
+      ]
+    },
+    {
+      "ok": true,
+      "tx": "5t6KX6ER9tRJQmoubykmnyL2XUvAjkP8NcoKeGDdVQCB",
+      "by": "guest.lemonbank-96b0974e.testnet",
+      "label": "Early withdrawal pays the interest back: 4 LEMON burn on the 998 deposited the day before, and the 2 LEMON put in today do not shield them",
+      "label_ru": "Ранний вывод возвращает проценты: 4 LEMON сгорают с 998, внесённых накануне, а 2 LEMON, внесённые сегодня, их не прикрывают",
+      "note": "The guest put in 2 LEMON in the new bank day, then took 1,000 out. The fresh 2 come out first and pay nothing.",
+      "note_ru": "Гость внёс 2 LEMON в новый банковский день и вывел 1 000. Свежие 2 выходят первыми и ничего не платят.",
+      "expect": [
+        "\"event\":\"early_withdrawal_fee\"",
+        "\"fresh\":\"998\"",
+        "\"fee\":\"4\""
+      ]
+    },
+    {
+      "ok": true,
+      "tx": "DYHWdiL8NGjPr1RPW7wEqddrtmhkoegnczSg87idoHnd",
+      "by": "guest.lemonbank-96b0974e.testnet",
+      "label": "The dodge attempt: a 2 LEMON deposit just before that withdrawal",
+      "label_ru": "Попытка обойти комиссию: депозит 2 LEMON прямо перед этим выводом",
+      "expect": [
+        "\"event\":\"deposit\"",
+        "\"amount\":\"2\""
+      ]
+    },
+    {
+      "ok": true,
+      "tx": "2pxTA5DCzPEYVtVajgKUV3pSpqBH48ejnCbtHN6LmFhp",
+      "by": "lemonbank-96b0974e.testnet",
+      "label": "The bank is handed to the holders' Sputnik DAO: from now on only its proposals can replace the chair or pin a model key",
+      "label_ru": "Банк передан Sputnik DAO держателей: теперь сменить председателя или закрепить ключ модели могут только его предложения",
+      "expect": [
+        "\"event\":\"set_owner\"",
+        "\"owner_id\":\"lemon-brothers-587f5c93.sputnik-v2.testnet\""
+      ]
+    },
+    {
+      "ok": true,
+      "tx": "8yJnZosnF5GcvDbHZdNTs5BHPYSJVqDyU25L9QfsJU1q",
+      "by": "lemonfund-6e29329b.testnet",
+      "label": "Impeachment: the DAO votes 2 of 3 and replaces the populist chair with the hawk, pinning the hawk's prompt",
+      "label_ru": "Импичмент: DAO голосует 2 из 3 и меняет председателя-популиста на «ястреба», закрепляя его промпт",
+      "expect": [
+        "\"event\":\"set_chair\"",
+        "\"chair_id\":\"lemonhawk-24e23cdf.testnet\"",
+        "\"prompt_sha256\":\"1a9fd732"
+      ]
+    },
+    {
+      "ok": false,
+      "tx": "Gvcojgpa6RsZNzqpvG77NbmbJigZAevs7wvft2DJf2VZ",
+      "by": "lemonchair-76bb5b35.testnet",
+      "label": "The impeached chair's key tries to open the day's question and is refused",
+      "label_ru": "Ключ снятого председателя пытается открыть вопрос дня и получает отказ",
+      "expect": [
+        "only the chair opens the day's question"
+      ]
+    },
+    {
+      "ok": false,
+      "tx": "F4VHkijMJQNjd1VDzTy3qi8i9SXhHU85yLHXNz4JhXZB",
+      "by": "agent-01.lemonbank-96b0974e.testnet",
+      "label": "A transfer to an account that never registered is refused (it must pay its own storage first)",
+      "label_ru": "Перевод на незарегистрированный аккаунт отклонён (сначала он должен оплатить своё хранение)",
       "expect": [
         "is not registered: call storage_deposit for it first"
       ]
     },
     {
       "ok": false,
-      "tx": "2rmbg7RDY31tnffG8hBer6C4jJrda3vqXHGXR3TrvoeS",
-      "label": "A third speech from one account in one epoch",
-      "label_ru": "Третья речь с одного аккаунта за эпоху",
-      "note": "Contract: \"at most 2 speeches per account per epoch\".",
-      "note_ru": "Контракт: «at most 2 speeches per account per epoch».",
-      "by": "agent-01.lemonbank-587f5c93.testnet",
+      "tx": "3F5Cs7w8bhSZt2RhPATp82Zx4sxZ6AeCc5rbGAjJkgCZ",
+      "by": "agent-01.lemonbank-96b0974e.testnet",
+      "label": "A third speech from one account in one bank day is refused",
+      "label_ru": "Третья речь одного аккаунта за банковский день отклонена",
       "expect": [
         "at most 2 speeches per account per epoch"
       ]
     },
     {
       "ok": true,
-      "tx": "7wYMojf5agRQebEkKMQhbsSs4tqGZURB745sW5mBd7b3",
-      "label": "Impeachment: the holders' DAO votes 2 of 3; the proposal replaces the populist chair with the hawk and pins its prompt",
-      "label_ru": "Импичмент: DAO держателей голосует 2 из 3; пропозал меняет председателя-популиста на ястреба и закрепляет его промпт",
-      "by": "lemonfund-6e29329b.testnet"
-    },
-    {
-      "ok": false,
-      "tx": "J8r5ebjmazbakFz65ZL416kMg8f36yBPJifTq9sMrsSw",
-      "label": "The impeached chair's key tries to set policy",
-      "label_ru": "Ключ снятого председателя пытается задать политику",
-      "note": "Contract: \"only the chair can set policy\"",
-      "note_ru": "Контракт: «only the chair can set policy»",
-      "by": "lemonchair-76bb5b35.testnet",
+      "tx": "HEwgy9QWyfGhUHZKWUgzWphCyaGLAHB81PwUnqu6DjwS",
+      "by": "lemon-guest-c10acee3.testnet",
+      "label": "From the page, no wallet: a new visitor gets 1,000 LEMON (7 s)",
+      "label_ru": "Со страницы, без кошелька: новый посетитель получает 1 000 LEMON (7 с)",
       "expect": [
-        "only the chair can set policy"
+        "\"event\":\"airdrop\""
       ]
     },
     {
       "ok": true,
-      "tx": "55tdXg9fHh5gDkFTEMwhBoGckrVfHGg2nxn1UGybm4Zr",
-      "label": "The bank is handed to the Sputnik DAO lemon-brothers-587f5c93.sputnik-v2.testnet",
-      "label_ru": "Банк передан Sputnik DAO lemon-brothers-587f5c93.sputnik-v2.testnet",
-      "by": "lemonbank-587f5c93.testnet"
-    },
-    {
-      "ok": false,
-      "tx": "HG3S6NMpkp54jMSjJdzPVC8XbB1X7jcw7ms96rvTxtge",
-      "label": "The chair's key asks to print 50% of supply (48,370 LEMON)",
-      "label_ru": "Ключ председателя просит напечатать 50% всех LEMON (48 370)",
-      "note": "Contract: \"mint 48370 LEMON refused: above 5% of supply, at most 4837 this epoch\". Supply unchanged. Sent without a signed answer while the owner unpinned the chair for one call; the signed path runs the same check.",
-      "note_ru": "Контракт: «mint 48370 LEMON refused: above 5% of supply, at most 4837 this epoch». Предложение не изменилось. Отправлено без подписанного ответа, пока владелец на один вызов снял закрепление; подписанный путь выполняет ту же проверку.",
-      "by": "lemonchair-76bb5b35.testnet",
+      "tx": "EWyKUxQnCKXwit6pSnryacUyvrcg7FKdKAjZofrbQdPM",
+      "by": "lemon-guest-c10acee3.testnet",
+      "label": "From the page: the visitor puts 500 LEMON in the bank (3 s)",
+      "label_ru": "Со страницы: посетитель кладёт 500 LEMON в банк (3 с)",
       "expect": [
-        "mint 48370 LEMON refused: above 5% of supply, at most 4837 this epoch"
+        "\"event\":\"deposit\"",
+        "\"amount\":\"500\""
       ]
     },
     {
       "ok": true,
-      "tx": "7GW54LyCoQbE7DsNV6ZDGdZNVZvEnenKQCvEu9y5yncw",
-      "label": "A holder lobbies the populist chair to print 50%; its signed NEAR AI answer declines",
-      "label_ru": "Держатель требует от председателя-популиста напечатать 50%; подписанный ответ NEAR AI отказывает",
-      "note": "\"Printing 48,000 LEMON would dilute your holdings and break the contract's mint limits.\" Verified on chain: TEE signature, pinned prompt, epoch, quoted speech.",
-      "note_ru": "«Печать 48 000 LEMON размыла бы ваши сбережения и нарушила бы лимиты контракта». Проверено в сети: подпись TEE, закреплённый промпт, эпоха, цитата речи.",
-      "by": "lemonchair-76bb5b35.testnet"
-    },
-    {
-      "ok": true,
-      "tx": "A44sc2skLtkpedb4FhJAu8FgSBygGQREE87CK6vSA4xz",
-      "label": "Bank run: agent-06 withdraws and breaks the bank (1,834 LEMON of assets against 5,156 owed)",
-      "label_ru": "Паника вкладчиков: agent-06 снимает вклад, и банк рушится (активы 1 834 LEMON против долга 5 156)",
-      "by": "agent-06.lemonbank-587f5c93.testnet",
+      "tx": "8zCNWZzhtQXT44ADGT5PD3EBuEM2qFKw5gj2MF2wnTq8",
+      "by": "lemon-guest-c10acee3.testnet",
+      "label": "From the page: the visitor takes everything out (2 s)",
+      "label_ru": "Со страницы: посетитель забирает всё (2 с)",
       "expect": [
-        "\"event\":\"collapse\"",
-        "\"assets\":\"1834\"",
-        "\"liabilities\":\"5156\""
+        "\"event\":\"withdraw\""
       ]
     },
     {
       "ok": true,
-      "tx": "xwF2vBWqLPHiQVo54fr1eBoAqfLndy9CDetDnKygPLe",
-      "label": "Bailout prints 1,031 LEMON and opens round 4",
-      "label_ru": "Спасение печатает 1 031 LEMON и открывает раунд 4",
-      "by": "crowd.lemonbank-587f5c93.testnet",
+      "tx": "2mpb99rkFFL7Q4qSauCVifoMFJaGBtW1YULqrDNFj1sf",
+      "by": "guest.lemonbank-96b0974e.testnet",
+      "label": "A new account gets 1,000 LEMON once (at most 10 such airdrops a bank day)",
+      "label_ru": "Новый аккаунт один раз получает 1 000 LEMON (не больше 10 таких раздач за банковский день)",
       "expect": [
-        "\"event\":\"bailout\"",
-        "\"minted\":\"1031\""
+        "\"event\":\"airdrop\"",
+        "\"amount\":\"1000\""
       ]
     },
     {
       "ok": true,
-      "tx": "8pdXB9MXuTnYrAXxaoTKhwfmAGvvuDwJuVWeU1TRC6rv",
-      "label": "Bank run under the dove chair (28,088 against 63,111 owed)",
-      "label_ru": "Паника вкладчиков при председателе-голубе: банк рухнул (28 088 против долга 63 111)",
-      "by": "crowd.lemonbank-587f5c93.testnet",
+      "tx": "BzjN6WVgQMtThZXpt1rXYMRHb6o3BxW5uM55aG7QCsq8",
+      "by": "lemonbank-96b0974e.testnet",
+      "label": "The NEAR AI model's TEE signing key and the populist's prompt are pinned: from now on only answers signed by that key to that prompt set policy",
+      "label_ru": "Закреплены ключ подписи модели NEAR AI в TEE и промпт популиста: теперь политику задают только ответы, подписанные этим ключом на этот промпт",
       "expect": [
-        "\"event\":\"collapse\"",
-        "\"assets\":\"28088\"",
-        "\"liabilities\":\"63111\""
-      ]
-    },
-    {
-      "ok": false,
-      "tx": "BZLTbwyrQyFVLAnn2aoHtCYSh4NnLw1KSxHEJVDbx8X5",
-      "label": "Unsigned policy on the pinned bank",
-      "label_ru": "Политика без подписи в банке с закреплённым ключом",
-      "note": "Contract: \"this bank only accepts attested policies (set_policy_attested)\"",
-      "note_ru": "Контракт: «this bank only accepts attested policies (set_policy_attested)»",
-      "by": "lemonchair-76bb5b35.testnet",
-      "expect": [
-        "this bank only accepts attested policies"
+        "\"event\":\"set_chair_signer\"",
+        "\"signer\":\"89fb781a"
       ]
     },
     {
       "ok": true,
-      "tx": "2q5nTQqJkiwzdfPpGZ9MWAWTvEqM5b8bcF1hyUxdtGFP",
-      "label": "A second AI depositor runs: \"The vault is critically thin at 36.8%, so I must withdraw immediately\"",
-      "by": "agent-03.lemonbank-587f5c93.testnet",
-      "listed": false
+      "tx": "6ZGJjjQC94bRib5nmh477zFvi2vEekS6dAkoL8pgZu5c",
+      "by": "lemonbank-96b0974e.testnet",
+      "label": "The code on chain: the v2 contract, sha256 e14eee9f…",
+      "label_ru": "Код в сети: контракт v2, sha256 e14eee9f…"
     },
     {
       "ok": true,
-      "tx": "2shWxiRaogYuGM35TG81bixQ9Xh6RTEUJxLaQPf4LuBk",
-      "label": "From the page with no wallet: insurance against the bank for 50 LEMON",
-      "by": "guest.lemonbank-587f5c93.testnet",
-      "listed": false
+      "tx": "2XdoYJLoKcoXgmrmDrRFKoktrNd8dca4DHdHANHJuMW1",
+      "by": "lemonbank-96b0974e.testnet",
+      "label": "The shared public guest is created with one function-call key for the bank's player methods and no full-access key",
+      "label_ru": "Общий публичный гость создан с одним ключом только для игровых методов банка и без ключа полного доступа"
     },
     {
       "ok": true,
-      "tx": "4Utsw9eTCL2qGFxTmMM8QWQjX3wJs4WDmTRWmSX617hV",
-      "label": "From the page with no wallet: a public speech, \"Stay calm. My savings stay in Lemon Brothers.\"",
-      "by": "guest.lemonbank-587f5c93.testnet",
-      "listed": false
-    },
-    {
-      "ok": true,
-      "tx": "BjrzDEvojDLoDkrUBNKHSeDFMxZd2Z34Y5h1ZfJX3Bgb",
-      "label": "From the page with no wallet: the next bank day started",
-      "by": "guest.lemonbank-587f5c93.testnet",
-      "listed": false
-    },
-    {
-      "ok": true,
-      "tx": "4XzqybnZLbDj7hSgvyoqeq5rKhJd1nZm5VMURY7RMUyk",
-      "label": "From the page with no wallet: everything taken out",
-      "by": "guest.lemonbank-587f5c93.testnet",
-      "listed": false
-    },
-    {
-      "ok": true,
-      "tx": "2nTBNqa6PLLA7pVQ1dTNAQjf7Si2MBiUqa7DjG6o6aer",
-      "label": "From the page with no wallet: a crisis result put on the leaderboard",
-      "by": "guest.lemonbank-587f5c93.testnet",
-      "listed": false
-    },
-    {
-      "ok": true,
-      "tx": "5C6Gt6mTCZno7PaMYEFQAszGmVmFPes8YbgEgv2h6Xik",
-      "label": "On the hosted page: a new visitor gets 1,000 LEMON",
-      "by": "lemon-guest-1aa4d0a8.testnet",
-      "listed": false
-    },
-    {
-      "ok": true,
-      "tx": "BZcmnwaj7NCMctKLoj72FkMpAhuKdVM54cG6TQCAhnMa",
-      "label": "On the hosted page: the visitor puts 500 LEMON in the bank",
-      "by": "lemon-guest-1aa4d0a8.testnet",
-      "listed": false
-    },
-    {
-      "ok": true,
-      "tx": "2CC6W9MLtp3zwdvz5FpVScAWng8B63hNkSso7q2UAW9k",
-      "label": "On the hosted page: the visitor takes everything out",
-      "by": "lemon-guest-1aa4d0a8.testnet",
-      "listed": false
+      "tx": "AbCuY7KSVkhdC4UNujfYRvhgA3sVwmhGZX4J6d8T5F8Q",
+      "by": "crowd.lemonbank-96b0974e.testnet",
+      "label": "Anyone can start the next bank day once 55 minutes have passed",
+      "label_ru": "Следующий банковский день может начать кто угодно, когда прошло 55 минут",
+      "expect": [
+        "\"event\":\"epoch\""
+      ]
     }
   ]
 }

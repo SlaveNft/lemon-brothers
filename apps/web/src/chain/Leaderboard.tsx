@@ -1,7 +1,7 @@
 /**
- * Crisis of the day: the on-chain leaderboard. The contract only records claims ("this account says seed + moves
- * scored N"); this component reads them and re-runs every crisis in the browser (board.ts), so the badge next to a
- * row is this machine's own check, not the contract's word. Read-only: nothing here signs anything.
+ * Crisis of the day: the on-chain leaderboard. The contract replays every run itself (crisis-core) and records the
+ * score it computes; this component reads the board and re-runs every crisis in the browser too (board.ts), so the
+ * badge next to a row is this machine's own check as well as the contract's. Read-only: nothing here signs anything.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RU, tr } from "../lang";
@@ -99,8 +99,8 @@ export function Leaderboard({ refresh = 0, me = null }: { refresh?: number; me?:
         {data && <> · {tr(`crisis #${data.day}`, `кризис №${data.day}`)}</>} · NEAR testnet
       </div>
       <p className="small muted board-why">
-        {tr("The contract records claims: an account, its ten moves and the score it says it got. Your browser has just re-run each crisis move by move, so nobody has to trust the board, the contract, or us.",
-          "Контракт записывает заявки: аккаунт, его десять ходов и счёт, который он себе приписал. Твой браузер только что переиграл каждый кризис ход за ходом — так что верить на слово не нужно ни таблице, ни контракту, ни нам.")}
+        {tr("The contract replays each run itself and records the score it computes, so nobody can put a made-up score here. Your browser has just re-run each crisis move by move as well: the two always agree.",
+          "Контракт сам переигрывает каждую партию и записывает счёт, который насчитал сам, поэтому придуманный счёт сюда не попадёт. Твой браузер тоже только что переиграл каждый кризис ход за ходом: результаты совпадают.")}
       </p>
 
       {load.state === "missing" && <p className="muted">{tr("The leaderboard is not available on this contract yet.", "На этом контракте таблицы лидеров пока нет.")}</p>}
@@ -118,8 +118,8 @@ export function Leaderboard({ refresh = 0, me = null }: { refresh?: number; me?:
       {data && rows.length > 0 && (
         <p className="small muted">
           {bad === 0
-            ? tr(`All ${rows.length} claims replayed to the score they state.`, `Все заявки (${rows.length}) при повторе дали заявленный счёт.`)
-            : tr(`${bad} of ${rows.length} claims do not replay to what they state; they are struck through and carry no rank.`, `Заявок, которые не воспроизводятся: ${bad} из ${rows.length}. Они зачёркнуты и не получают места.`)}
+            ? tr(`All ${rows.length} runs: this browser got the score the contract recorded.`, `Все партии (${rows.length}): в этом браузере вышел тот же счёт, что записал контракт.`)
+            : tr(`${bad} of ${rows.length} runs give this browser another score than the contract recorded; they are struck through and carry no rank.`, `Партий, где у браузера вышел другой счёт, чем записал контракт: ${bad} из ${rows.length}. Они зачёркнуты и не получают места.`)}
         </p>
       )}
       {past && pastRows.length > 0 && (

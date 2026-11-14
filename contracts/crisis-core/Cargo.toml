@@ -1,0 +1,12 @@
+[package]
+name = "crisis-core"
+version = "0.1.0"
+edition = "2021"
+description = "The crisis of the day ('You are the chair') as a pure function of a seed and moves: the same game as packages/sim/src/crisis.ts, so the contract can replay a claimed result."
+license = "MIT"
+
+[dependencies]
+bank-core = { path = "../bank-core" }
+
+[dev-dependencies]
+serde_json = "1"

@@ -11,7 +11,7 @@
     "supply": "tsx scripts/supply.ts",
     "attack": "tsx scripts/attack.ts",
     "sweep:crisis": "tsx scripts/crisis-sweep.ts",
-    "vectors": "tsx scripts/vectors.ts"
+    "vectors": "tsx scripts/vectors.ts && tsx scripts/crisis-vectors.ts"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

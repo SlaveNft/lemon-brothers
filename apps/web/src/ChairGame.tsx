@@ -5,7 +5,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import {
-  aiCrisis, checkMove, createCrisis, crisisResult, CRISIS, dailyCrisis, decodeMoves, encodeMoves, fillText, observe, playEpoch,
+  aiCrisis, BANK, checkMove, createCrisis, crisisResult, CRISIS, dailyCrisis, decodeMoves, encodeMoves, fillText, observe, playEpoch,
   POLICY_BOUNDS, PROMISES, replayCrisis, view, DECK,
   type Crisis, type CrisisResult, type Ending, type EpochReport, type Lever, type Move, type WorldView,
 } from "@chair/sim";
@@ -18,6 +18,9 @@ import { answerOrder } from "./logic";
 import { Home } from "./Home";
 import { useTab } from "./tabs";
 import { ChainPanel } from "./chain/ChainPanel";
+import { RoundCard } from "./chain/Round";
+import { useBank } from "./chain/live";
+import { roundInfo } from "./chain/season";
 import { Leaderboard } from "./chain/Leaderboard";
 import { EXPLORER } from "./chain/rpc";
 import { ruText } from "./ruText";
@@ -37,7 +40,7 @@ const ENDING: Record<Ending, { title: [string, string]; epitaph: [string, string
 /** Putting the result on chain: idle, then the two waiting stages, then the transaction or the reason it failed. */
 type Submit =
   | { s: "idle" } | { s: "guest" } | { s: "sending" }
-  | { s: "done"; txHash: string; accountId: string; accepted: boolean }
+  | { s: "done"; txHash: string; accountId: string; accepted: boolean; score?: number }
   | { s: "error"; error: string; txHash?: string };
 /** The guest account this browser already has, if any (read without loading the signing module). */
 function storedGuestId(): string | null {
@@ -141,7 +144,7 @@ export default function ChairGame() {
       const guest = await import("./chain/guest");
       const out = await guest.submitRun({ seed: c.seed, moves: encodeMoves(c.moves), score: r.score, ending: r.ending }, { onStage: (s) => setSubmit({ s }) });
       setGuestId(storedGuestId());
-      if (out.ok) { setSubmit({ s: "done", txHash: out.txHash, accountId: out.accountId, accepted: out.accepted }); setBoardTick((x) => x + 1); }
+      if (out.ok) { setSubmit({ s: "done", txHash: out.txHash, accountId: out.accountId, accepted: out.accepted, score: out.score }); setBoardTick((x) => x + 1); }
       else setSubmit({ s: "error", error: out.error, txHash: out.txHash });
     } catch (e) {
       setSubmit({ s: "error", error: tr(`The signing module could not be loaded (${(e as Error).message}). Check the connection.`, `Не удалось загрузить модуль подписи (${(e as Error).message}). Проверь соединение.`) });
@@ -170,7 +173,7 @@ export default function ChairGame() {
       <TopBar tab={tab} />
 
       {tab === "what" && <Home />}
-      {tab === "coins" && <Wallet />}
+      {tab === "coins" && <><Wallet /><RoundCard /></>}
       {tab === "bank" && <>
         <ChainPanel />
         <p className="more-links">
@@ -195,8 +198,8 @@ export default function ChairGame() {
       <p className="play-note"><SimTag>{tr("a game · simulation", "игра · симуляция")}</SimTag>{" "}
         {tr("You sit in Leo's chair. Each day: pick an answer for the journalist and press \"Say it\". The goal: keep the bank standing for ten days, so the depositors do not all run. The game runs in your browser on a copy of the bank and does not touch the real coin.",
           "Ты в кресле Лео. Каждый день: выбери ответ журналисту и нажми «Сказать это». Цель — продержать банк десять дней, чтобы вкладчики не разбежались. Игра идёт в твоём браузере на копии банка и настоящую монету не трогает.")}{" "}
-        {tr(`The copy is a town of its own: ${fmt(c.supply0)} LEMON on day one, ceiling ${fmt(Number(c.w.bank.maxSupply))}.`,
-          `У копии свой город: в первый день ${fmt(c.supply0)} LEMON, потолок ${fmt(Number(c.w.bank.maxSupply))}.`)}</p>
+        {tr(`The copy is a town of its own: its sixty depositors hold ${fmt(c.supply0 - Number(BANK.airdrop))} LEMON on day one, and no more than ${fmt(Number(c.w.bank.maxSupply))} may ever exist (a quarter more).`,
+          `У копии свой город: у шестидесяти вкладчиков в первый день ${fmt(c.supply0 - Number(BANK.airdrop))} LEMON, и больше ${fmt(Number(c.w.bank.maxSupply))} не может появиться никогда (на четверть больше).`)}</p>
       <div className="play">
       <Scene s={s} idle={tr("The press is waiting for your first answer.", "Журналисты ждут твоего первого ответа.")} />
 
@@ -240,7 +243,8 @@ export default function ChairGame() {
               <div className="onchain" aria-live="polite">
                 {submit.s === "done" ? (
                   <p className={submit.accepted ? "onchain-done" : "onchain-done warn"}>
-                    <RealTag>{tr("done · real operation on NEAR testnet", "прошло · настоящая операция в NEAR testnet")}</RealTag>{" "}<b>{submit.accepted ? tr("Your score is on the public board.", "Твой счёт записан в общую таблицу.") : tr("The transaction went through, but the contract says this claim did not make the board.", "Транзакция прошла, но контракт сообщил, что эта заявка в таблицу не попала.")}</b>{" "}
+                    <RealTag>{tr("done · real operation on NEAR testnet", "прошло · настоящая операция в NEAR testnet")}</RealTag>{" "}<b>{submit.accepted ? tr("Your score is on the public board.", "Твой счёт записан в общую таблицу.") : tr("The transaction went through, but this score did not make the board.", "Транзакция прошла, но с этим счётом в таблицу попасть не удалось.")}</b>{" "}
+                    {submit.score !== undefined && tr(`The contract replayed your days itself and counted ${submit.score}/100.`, `Контракт сам переиграл твои дни и насчитал ${submit.score}/100.`)}{" "}
                     <a href={`${EXPLORER}/txns/${encodeURIComponent(submit.txHash)}`} target="_blank" rel="noreferrer">{tr("See the record in the explorer", "Посмотреть запись в обозревателе")} ↗</a>
                     {" · "}{tr("your account", "твой счёт")} <a className="mono" href={`${EXPLORER}/address/${encodeURIComponent(submit.accountId)}`} target="_blank" rel="noreferrer">{submit.accountId}</a>
                     {" · "}<a href="#leaderboard">{tr("leaderboard ↓", "таблица лидеров ↓")}</a>
@@ -261,6 +265,7 @@ export default function ChairGame() {
                 <p className="small muted">{tr("The game above was a simulation; this button is the one real step. It sends your score to the bank's program on NEAR testnet, where it appears in the leaderboard below with a link to the record in the explorer. You need nothing: no wallet, no money. The page opens a test account for you, and its key lives in this browser only.", "Игра выше была симуляцией; эта кнопка — единственный настоящий шаг. Она отправит твой счёт в программу банка в NEAR testnet: он появится в таблице лидеров ниже со ссылкой на запись в обозревателе. Ничего не нужно: ни кошелька, ни денег. Страница сама откроет для тебя тестовый счёт, ключ от него хранится только в этом браузере.")}{guestId && submit.s !== "done" && <> {tr("Your guest account", "Твой гостевой аккаунт")}: <span className="mono">{guestId}</span>.</>}</p>
               </div>
             )}
+            <RealBridge />
             <p className="small muted">{tr("The link holds the seed and your ten moves. Anyone who opens it replays the same crisis in their browser and gets the same score: nothing to trust, nothing to fake.", "В ссылке — сид и твои десять ходов. Любой, кто её откроет, переиграет тот же кризис у себя в браузере и получит тот же счёт: верить на слово не нужно, подделать нельзя.")}{best !== null && ` ${tr("Your best today", "Твой лучший счёт сегодня")}: ${best}.`}</p>
           </section>
         ) : (
@@ -397,4 +402,18 @@ function resumeCrisis(seed: number): Crisis {
 function saveBest(start: Start, r: CrisisResult) {
   if (start.day === null) return;
   try { const b = loadBest(start.day); if (b === null || r.score > b) localStorage.setItem(bestKey(start.day), String(r.score)); } catch { /* storage blocked: no best score */ }
+}
+
+/** After a game: the same bank is running for real, as a round of ten bank days with real (test) coins. */
+function RealBridge() {
+  const { s } = useBank();
+  const r = s ? roundInfo(s) : null;
+  return (
+    <p className="bridge">
+      <RealTag>{tr("the real bank", "настоящий банк")}</RealTag>{" "}
+      {tr("You played a copy of the bank. The real one runs the same rules on NEAR testnet, where Leo, a NEAR AI model, sits in the chair and the depositors are people and agents", "Ты играл на копии банка. Настоящий работает по тем же правилам в NEAR testnet: в кресле Лео, модель NEAR AI, а вкладчики — люди и агенты")}
+      {r && !r.collapsed ? tr(`: round ${r.round}, day ${r.day} of 10. `, `: раунд ${r.round}, день ${r.day} из 10. `) : ". "}
+      <a href="#coins">{tr("Take a seat as a depositor →", "Стать вкладчиком →")}</a>
+    </p>
+  );
 }

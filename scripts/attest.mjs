@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MODEL = process.env.NEAR_AI_MODEL || "Qwen/Qwen3.6-35B-A3B-FP8";
-const CONTRACT = process.env.CONTRACT || "lemonbank-587f5c93.testnet";
+const CONTRACT = process.env.CONTRACT || "lemonbank-96b0974e.testnet";
 const RPCS = ["https://rpc.testnet.fastnear.com", "https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"];
 const INTEL_ROOT = "https://certificates.trustedservices.intel.com/Intel_SGX_Provisioning_Certification_RootCA.cer";
 const offline = process.argv.includes("--file");

@@ -34,8 +34,8 @@ Every bank has a ceiling, `max_supply`, fixed when it is created: its opening su
 | loan yield (each epoch) | cut down to the room that is left, 0 when there is none |
 | the chair's print (`set_policy`) | the whole call is refused: "the bank's ceiling is N LEMON, at most R can still be printed" |
 | bailout after a collapse | cut down to the room that is left |
-| insurance payout at a collapse | cut down to the room that is left |
-| a newcomer's airdrop | refused, and no account is created: "newcomers get coins again once some have burned" |
+| insurance payout at a collapse | cut down to the room that is left; every insured account gets the same share of what could be printed |
+| a newcomer's airdrop | refused once it would leave less than a tenth of the ceiling free: "newcomers get coins again once some have burned" |
 
 Past the ceiling, new LEMON can only replace LEMON that burned (fire sales, write-offs, fees). Reason: loan yield
 prints every epoch and airdrops print for every new account, so without a ceiling the supply has no upper bound. The 5%-an-epoch
@@ -43,10 +43,8 @@ limit bounds how fast the chair can print, the ceiling bounds how much can exist
 there so that a ten-day crisis never touches the ceiling (the most a chair can add in ten days is the 15% round limit
 plus about 5% of yield), which keeps every recorded game replaying to the same score.
 
-On chain the ceiling is a record of its own (`x:cap`). `new` writes it once. For a bank that has none, the contract
-account may call `seal_max_supply(max_supply)`: it works once, never below the supply in existence, and nothing can
-change the ceiling afterwards. The bank on testnet is sealed at 150,000 LEMON. `get_state` reports the ceiling as
-`max_supply` (null if not set).
+On chain the ceiling is a record of its own (`x:cap`), written once by `new`; no method changes it. `get_state`
+reports it as `max_supply`.
 The parity test asserts `supply <= max_supply` after each of its 8,000 operations.
 
 ### Each epoch (`advance_epoch`, permissionless once the epoch has elapsed)
@@ -74,26 +72,36 @@ In this order:
 3. Otherwise the bank fire-sells loans to a vulture fund at a 40% haircut (`sold = ceil(need * 1000 / 600)`), and the
    haircut is burned. Reason: this is how runs turn liquidity problems into losses for everyone who stays.
 4. If even selling every loan cannot cover the request, the bank collapses, in the same call: all loans are sold at
-   the haircut (the haircut is burned), and the remaining assets are split pro rata over all deposit shares. Every
-   depositor, including the one withdrawing, gets `assets * shares / total_shares` (rounded down) straight into their
-   wallet, in registration order, and their shares are set to zero. There is nothing to claim afterwards. The few
-   LEMON lost to rounding stay in the reserve. Then insurance pays out (see Players), the share index goes back to
-   1, and the bank stays closed (no deposits, withdrawals, insurance or policy) until the next `advance_epoch` runs the
-   bailout (see Rounds). The withdrawal that triggered the collapse is not paid as requested: its caller gets the
-   same pro rata share as everyone else. Reason: first come, first served until the money runs out, then everyone
-   left takes the same haircut (Diamond-Dybvig).
+   the haircut (the haircut is burned), and the remaining assets are owed pro rata to all deposit shares. Every
+   depositor, including the one withdrawing, is owed `assets * shares / total_shares` (rounded down), and the round's
+   insurance is printed (see Players). The share index goes back to 1, and the bank stays closed (no deposits,
+   withdrawals, insurance or policy) until the next `advance_epoch` runs the bailout (see Rounds). The withdrawal that
+   triggered the collapse is not paid as requested: its caller is owed the same pro rata share as everyone else.
+   Reason: first come, first served until the money runs out, then everyone left takes the same haircut
+   (Diamond-Dybvig).
 
-   The collapse settles every depositor in one call, so its cost grows with the number of accounts. That is why the
-   contract holds at most 500 accounts (see Token). The call logs one `collapse` event with the totals (accounts
-   settled, LEMON paid out, accounts insured, insurance minted), not one event per account (see Token).
+   A collapse costs the same with ten depositors or a million: the contract writes one collapse record (the assets,
+   the shares they are split over, the insurance printed and owed) and moves that money into `unsettled`. Each account
+   is paid its share the next time it calls the bank, and anyone may pay any accounts at once with
+   `settle(account_ids)` (at most 20 a call; `get_unsettled` lists who is still owed). The amounts are exactly those
+   of a split paid out at the moment of the collapse; `get_account` shows what is owed as `owed`. The few LEMON lost
+   to rounding stay in `unsettled`. The simulation pays everyone at the collapse; the parity test checks that both
+   give the same wallets.
 
 ### The early-withdrawal fee (contract only)
 
-Money taken out in the first bank day after the account's latest deposit pays back the interest that the one
-`advance_epoch` in between added: `fee = ceil(withdrawn * rate / 10000)`, where `rate` is the deposit rate that
-`advance_epoch` applied (0 after a bailout), never more than the withdrawal. The fee burns. Money taken out on the day
-it went in pays nothing (no interest was added to it); money that stayed a whole bank day pays nothing either. Every
-deposit restarts the account's clock. `get_account` says `early_fee_now: true` while the fee applies.
+Money deposited in one bank day and taken out in the next pays back the interest that the one `advance_epoch` in
+between added to it: `fee = ceil(fresh * rate / 10000)`, where `fresh` is the part of the withdrawal that was
+deposited in the previous bank day and `rate` is the deposit rate that `advance_epoch` applied (0 after a bailout),
+never more than that part. The fee burns. Money taken out on the day it went in pays nothing (no interest was added to
+it); money that stayed a whole bank day pays nothing either.
+
+The contract keeps, per account, the shares bought today and the shares bought in the previous bank day. A withdrawal
+takes today's shares first, then yesterday's (these pay the fee), then older ones. So a new deposit never changes how
+old the rest of the deposit is: depositing 2 LEMON before taking out 1,000 that went in yesterday still pays the fee on
+998 of them, and the 2 come out first. Splitting a withdrawal or adding dust deposits can only round against the
+caller (a coin per call at most). `get_account` shows `fee_free_now` (deposited today, comes out first and free),
+`early_fee_on` (deposited yesterday, pays the fee) and `early_fee_now: true` while some of it is left.
 Reason: a deposit earns a whole day's interest however late in the day it arrives, and anyone may call
 `advance_epoch`. Without the fee, deposit -> advance_epoch -> withdraw_all in a row would collect a day's interest at
 no risk, and could be repeated every bank day while the deposits of everyone else grew on paper past the coins behind
@@ -102,15 +110,15 @@ them. The fee lives in the contract's wrapper (`lemon-bank`), not in `bank-core`
 
 ### The length of a bank day
 
-The deployed bank's day is 55 minutes (`set_epoch_seconds`, which only the contract account can call). The keeper
-moves the bank once an hour and the chair speaks once a bank day: a day slightly under an hour keeps the keeper on
-time, and a much shorter day would let anyone move the bank on faster than the chair speaks.
+The deployed bank's day is 55 minutes, fixed when the bank was created (`new(epoch_seconds)`, 5 seconds to a day). The
+keeper moves the bank once an hour and the chair speaks once a bank day: a day slightly under an hour keeps the keeper
+on time, and a much shorter day would let anyone move the bank on faster than the chair speaks.
 
 ## The chair
 
-The chair is one account holding a function-call access key that can call only `set_policy` and
-`set_policy_attested` on the bank. Both set the same policy under the same bounds; which one the bank accepts depends
-on whether the DAO has pinned a signing key (see Attested mode). The contract checks every field; an out-of-bounds
+The chair is one account holding a function-call access key that can call only `open_question`, `set_policy` and
+`set_policy_attested` on the bank. The last two set the same policy under the same bounds; which one the bank accepts
+depends on whether the DAO has pinned a signing key (see Attested mode). The contract checks every field; an out-of-bounds
 field rejects the whole call and the previous policy stays. Reason: the AI can be persuaded, jailbroken or wrong, and
 it still cannot move more than the contract allows.
 
@@ -143,22 +151,55 @@ What `attestation` holds:
 The owner calls `set_chair_signer(signer, model, prompt_sha256)` to pin the chair model's TEE signing key (ed25519,
 hex), the model id, and the sha256 of the chair's system prompt. From then on `set_policy` is refused and a policy is
 accepted only through `set_policy_attested(request, response, signature)`: the exact NEAR AI Cloud request and
-response bodies and the signature over `"{model}:{sha256(request)}:{sha256(response)}"`. `signer = null` switches back
-to unattested mode. Every call logs a `set_chair_signer` event.
+response bodies and the signature over `"{model}:{sha256(request)}:{sha256(response)}"`. Until the first pin the bank
+is in unattested mode; after it, `signer = null` is refused, so the requirement can be moved to another key, model or
+prompt but never dropped. Every call logs a `set_chair_signer` event.
 
-The contract checks: the signature; that the request is canonical JSON with only the known fields, the pinned model,
-`json_object` output, thinking off, temperature 0..1, at most 1024 output tokens; that its system prompt is the
-pinned one; that the observation names the current epoch id, round, epoch and policy (rate, target, gate) and quotes
-only speeches and rumours that are on chain (a prefix of them, word for word); and that the answer names the same
-epoch id. The policy is read from the signed answer and then meets the same bounds as any policy.
+**The question is frozen on chain before the model is asked.** Once a bank day the chair calls
+`open_question(mood_permille)`. The contract writes down its own numbers at that moment: supply, reserve, loans,
+liabilities, reserve ratio, the closed day's outflow (`outflow / (liabilities + outflow)` in permille, rounded down)
+and loan write-off, how much the chair may print now (`mintRoom`: the smallest of 5% of supply, what is left of 15% of
+the round's starting supply, and the room under the ceiling) and the chair's credibility (below). It also counts the speeches and rumours made so far
+and logs everything as a `question` event. `get_question` returns the observation to send, field for field. From then
+until the next bank day, new speeches and rumours are refused ("the chair has already read the room"), so nobody pays
+a fee for words the chair will not hear.
 
-The contract does not check the other numbers in the observation (supply, reserve, loans, liabilities, reserve and
-outflow permille, mint room, write-off, mood, credibility): they only have to be whole numbers. They are a snapshot
-that moves within the epoch, or figures computed off chain. So whoever holds the chair key can show the model a bank
-that looks better or worse than the real one, can leave out the latest speeches, and can ask several times and
-submit the answer it prefers. Attested mode proves that the policy is the pinned model's answer, under the pinned
-prompt, to a question about this epoch that puts no words in anyone's mouth. It does not prove that the model saw the
-true balances. The bounds above are what holds in every case.
+The contract then checks: the signature; that the request is canonical JSON with only the known fields, the pinned
+model, `json_object` output, thinking off, **temperature 0**, at most 1024 output tokens; that its system prompt is the
+pinned one; that the observation **equals the frozen question**: every number, the current epoch id, round, epoch and
+policy (rate, target, gate), and exactly the speeches and rumours made before it, word for word (none invented, none
+left out); and that the answer names the same epoch id. The policy is read from the signed answer and then meets the
+same bounds as any policy.
+
+What remains to trust, stated plainly:
+
+- `moodPermille` (the share of the town's depositors past half their panic threshold) comes from the keeper's simulated
+  town, which exists nowhere in contract state. The chair states it in `open_question` (0..1000), it is on chain
+  before the model answers, and the model must be told exactly that; the contract cannot say it is right.
+- The chair chooses the moment within the bank day at which the question is frozen. The numbers are true, of that
+  moment.
+- Temperature 0 asks for the model's most likely answer, so asking again gives the same answer in practice; a provider
+  may still vary the text slightly, so it is not strictly ruled out.
+
+Attested mode proves that the policy is the pinned model's answer, under the pinned prompt, to this bank's own numbers
+of this bank day and to every word players said before the question. The bounds above are what holds in every case.
+
+**If the AI stops** (NEAR AI down, no key, a signature that does not verify, the keeper offline), nothing changes on
+its own: the last accepted policy stays in force, day after day, with the same rate, target and gate, and no printing
+(a policy's `mint` is applied once, when it is accepted). Deposits, withdrawals, the fee, collapses, settlement and
+bailouts work without the chair; anyone can call `advance_epoch`. The keeper's fallback chair (deterministic, same
+output format) can only speak in unattested mode: a bank with a pinned signer accepts no policy until a signed answer
+arrives. The DAO can pin another key, model or prompt (`set_chair_signer`), but once a key is pinned it can never
+switch signed policies off: `signer: null` is refused.
+
+### The chair's credibility (on chain)
+
+The contract keeps how far the town believes the chair, 0..1000, starting at 1,000, by the simulation's rule. At the
+end of each bank day (`advance_epoch`): if the chair's statement that day was calm or confident and the day's outflow
+rose above the day before's and above 6% of deposits, the words are remembered as a lie, -200 (never below 200); any
+other day wins back 50 (never above 1,000). The bailout after a collapse puts it at no less than 500 (fresh money
+behind a fresh promise); an impeachment starts the new chair at 1,000. `get_state.credibility` shows it, the question
+carries it, and the keeper's town hears the chair with it (calm words from a chair nobody believes calm nobody).
 
 The chair's model runs on NEAR AI Cloud when an API key is configured (private inference in a TEE; the runner stores
 the signature reference with each decision). Without a key, a deterministic fallback chair with the same output format
@@ -182,14 +223,15 @@ circulating LEMON vote for it.
 
 | Action | Cost | Effect |
 | --- | --- | --- |
-| `airdrop` | free, once per account | 1,000 LEMON to start (testnet; sybil resistance is weak and stated as such). Also registers the account, with no storage deposit |
+| `airdrop` | free, once per account; a new account attaches its storage price | 1,000 LEMON to start; at most 10 newcomers a bank day, and never into the last tenth of the ceiling (testnet; sybil resistance is weak and stated as such) |
 | `deposit(amount)` | LEMON from wallet | shares at the current index |
 | `withdraw` / `withdraw_all` | none | see Withdrawals; runs are public |
 | `lobby(text)` | 10 LEMON, burned | a public speech (up to 280 bytes); the chair reads it, and so does the town (see "The town hears speeches"); at most 20 per epoch in total and 2 per account |
 | `rumor(kind)` | 25 LEMON, burned | a public rumour: `vault_empty`, `chair_resigning`, `bailout_coming`; agents react; at most 20 per epoch in total (the chair reads them all) and 2 per account |
-| `insure(premium)` | 10 .. 500 LEMON per account per round, before epoch 7 | premium goes to the reserve; if the bank collapses this round, the holder receives 3 x premium, minted |
+| `insure(premium)` | 10 .. 500 LEMON per account per round, before epoch 7 | premium goes to the reserve; if the bank collapses this round, the holder receives 3 x premium, minted (cut by the same ratio for everyone if the ceiling leaves less room) |
 | `ft_transfer(receiver, amount)` | 1 yoctoNEAR (NEP-141) | moves LEMON between wallets; the receiver must be registered |
-| `storage_deposit(account?)` | 0.0025 NEAR, once per account | registers an account so it can receive LEMON (see Token) |
+| `storage_deposit(account?)` | the storage price (0.00375 NEAR), once per account | registers an account so it can hold LEMON; `storage_unregister` gives it back (see Token) |
+| `settle(account_ids)` | gas only | pays up to 20 accounts what a past collapse owes them; anyone may call it |
 
 The per-account caps (2 speeches and 2 rumours per account per epoch) exist because the epoch's lists are short:
 without them one account could buy all 20 speeches for 200 LEMON at the start of an epoch, and nobody else would be
@@ -238,37 +280,36 @@ its own. That is a reason to impeach it.
 - `ft_total_supply` is all LEMON. `ft_balance_of(account)` is the account's wallet; for the contract account it is
   the wallet plus the bank's reserve and loans. Deposits are LEMON the bank holds, so they count as the bank's
   balance, not the depositor's, and all balances add up to the supply. `get_account` shows a deposit's value.
-- Registration (NEP-145, the minimal part): an account must exist in the bank before it can receive a transfer.
-  `storage_deposit(account_id?, registration_only?)` registers the caller or `account_id` for a fixed 0.0025 NEAR
-  (250 bytes of state at NEAR's storage price); anything attached above that, or all of it if the account already
-  exists, is refunded. `storage_balance_bounds` returns min = max = that price, `storage_balance_of` the price for a
-  registered account and null otherwise. There is no `storage_withdraw` or `storage_unregister`: an account stays.
-  `ft_transfer` and `ft_transfer_call` to an unregistered receiver fail with a message naming `storage_deposit`.
-  Reason: otherwise anyone could create accounts in the bank's state for 1 LEMON each, and the contract would pay
-  the storage.
-- Accounts that count as registered without paying: genesis accounts, accounts that were in the bank when the rule came in,
-  and accounts created by `airdrop` (the testnet faucet, once per NEAR account; a mainnet version would charge here
-  too).
-- At most 500 accounts (`MAX_ACCOUNTS`). A registration or an airdrop that would create account 501 fails with "the
-  bank is full". Reason: the whole bank is one stored value that every call reads and writes, and a collapse settles
-  every depositor in one call, so the number of accounts must stay bounded; the cap also bounds what free airdrop
-  accounts can cost the contract in storage (500 x 0.0025 NEAR). `deposit`, `withdraw`, `insure`, `lobby` and `rumor` need LEMON or a deposit, so they never create an account
-  and never need NEAR attached.
+- Registration (NEP-145): an account must exist in the bank before it can hold LEMON. Each account is one record of
+  its own in the contract's storage, and the account pays for it: `storage_deposit(account_id?, registration_only?)`
+  registers the caller or `account_id` for the storage price (the bytes one account record takes, measured when the
+  bank was created, at NEAR's storage price: 375 bytes, 0.00375 NEAR); anything attached above it, or all of it
+  if the account exists already, is refunded. A newcomer can attach the price to its first `airdrop` instead.
+  `storage_balance_bounds` returns min = max = the price, `storage_balance_of` the price for a registered account and
+  null otherwise, `storage_withdraw` returns that nothing is available above it. `storage_unregister(force?)` closes
+  the caller's account and refunds the price: refused while it has money in the bank or insurance this round, and
+  while its wallet holds LEMON unless `force`, which burns that LEMON. `ft_transfer` and `ft_transfer_call` to an
+  unregistered receiver fail with a message naming `storage_deposit`. Reason: whoever adds to the state pays for it,
+  so nobody can fill the bank at the contract's expense, and there is no limit on how many accounts it holds.
+- Genesis accounts are registered by the deployer, who funds the contract account.
+- No call reads or writes all accounts: each one loads only the accounts it touches. `deposit`, `withdraw`, `insure`,
+  `lobby` and `rumor` need LEMON or a deposit, so they never create an account and never need NEAR attached.
 - `ft_transfer_call(receiver, amount, memo?, msg)` transfers and then calls `ft_on_transfer` on the receiver; what the
   receiver returns as unused comes back to the sender (everything, if the receiver's call fails), capped by what the
   receiver still holds.
-- Events (NEP-297). Standard `nep141`: `ft_mint` for genesis, airdrop, loan yield, policy mint, bailout and insurance
-  payout; `ft_burn` for speech and rumour fees, fire-sale and collapse haircuts and loan write-offs; `ft_transfer` for
-  wallet transfers, deposits and insurance premiums (user to bank) and withdrawals and collapse settlements (bank to
-  user). Standard `lemon-bank`: `deposit`, `withdraw`, `insure`, `lobby`, `rumor`, `airdrop`, `register`, `policy`,
-  `epoch`, `loan_yield`, `writedown`, `round_end`, `collapse`, `bailout`, `set_chair`, `set_chair_signer`,
-  `set_owner`, `crisis_run`.
-- A call logs a bounded number of events however many accounts it touches (a NEAR receipt carries at most 100 logs
-  and 16 KB). A collapse logs one `collapse` event with totals and one `ft_transfer` and one `ft_mint` event with at
-  most 25 entries each (the first 25 in registration order); the `collapse` event says how many entries were left
-  out. After a collapse with more than 25 depositors or insured accounts, an indexer has to re-read balances with
-  `ft_balance_of`; the supply in the events is then short by the insurance payouts left out, and `ft_total_supply`
-  is the truth.
+- `ft_total_supply` counts everything; `ft_balance_of(contract)` is the bank's reserve, loans and `unsettled` (what
+  past collapses still owe), so all balances add up to the supply at every moment.
+- Events (NEP-297). Standard `nep141`: `ft_mint` for genesis, airdrop, loan yield, policy mint, bailout and the
+  insurance printed at a collapse (to the bank); `ft_burn` for speech and rumour fees, fire-sale and collapse
+  haircuts, loan write-offs, the early-withdrawal fee and a forced `storage_unregister`; `ft_transfer` for wallet
+  transfers, deposits and insurance premiums (user to bank) and withdrawals, collapse settlements and insurance
+  payouts (bank to user). Standard `lemon-bank`: `deposit`, `withdraw`, `insure`, `lobby`, `rumor`, `airdrop`, `register`, `policy`,
+  `epoch`, `loan_yield`, `writedown`, `round_end`, `collapse`, `settle`, `bailout`, `set_chair`, `set_chair_signer`,
+  `set_owner`, `unregister`, `crisis_run`. The contract also answers NEP-330's `contract_source_metadata` (version,
+  source link, standards).
+- A call logs a bounded number of events: no call touches more than a few accounts (`settle` at most 20), and long
+  lists are split into events of at most 25 entries, so the logs of any call fit in one receipt (100 logs, 16 KB)
+  and an indexer can rebuild every balance from the events alone.
 - Supply log and stats (views, for the token page). `get_supply_log()` returns the latest 60 changes of the supply,
   oldest first: `{ epoch_id, round, kind: "mint" | "burn", amount, memo, at_ms }`. A call that mints or burns adds one
   record per kind with the call's total and the memos behind it (the same memos as the `ft_mint` / `ft_burn` events:
@@ -276,8 +317,8 @@ its own. That is a reason to impeach it.
   `epoch_id` and `round` are the bank's after the call. Older records drop out, the events keep the full history.
   `get_stats()` returns `{ rounds_survived, rounds_fallen, current_streak, longest_streak, total_minted,
   total_burned, since_ms }`: rounds counted from `round_end` (a collapse is a fallen round and resets the streak, a
-  bailout ends nothing), LEMON minted and burned in total. Both count from the upgrade that added them, not from
-  genesis: `since_ms` is the time of the first counted call (0 before it), and genesis mints are in neither. They
+  bailout ends nothing), LEMON minted and burned in total, from the bank's first call after genesis: `since_ms` is
+  the time of the first counted call (0 before it), and genesis mints are in neither. They
   are stored next to the bank state, not in it, and are read only by calls that mint, burn or end a round.
 
 ## Rounds
@@ -370,29 +411,30 @@ leave). It is a legal move with the worst score.
 
 ### On-chain leaderboard
 
-The crisis of the day has a board in the bank contract. `submit_run(seed, moves, score, ending)` records a claim
-under the calling account (which needs no LEMON and no account in the bank); `get_runs(day?)` returns a day's board
-and `crisis_day()` today's `{ day, seed }`.
+The crisis of the day has a board in the bank contract. `submit_run(seed, moves)` puts today's crisis on it under the
+calling account (which needs no LEMON and no account in the bank); `get_runs(day?)` returns a day's board,
+`crisis_day()` today's `{ day, seed }`, and the view `replay_run(seed, moves)` what the contract makes of any game.
 
-What the contract checks:
+The contract plays the game itself. `contracts/crisis-core` is the crisis of the day in Rust, the same game as the
+browser's (`packages/sim/src/crisis.ts` with the town and the bank), and the parity test replays 800 games recorded
+by the browser's engine and requires every day, ending and score to match. `submit_run` replays the moves and records
+the score and ending it computes (about 16 Tgas), so every entry on the board is a real result: a made-up score cannot
+be submitted at all.
 
-- `seed` is today's seed. Day 1 is 2026-11-13 UTC, `day = floor(block time / 86,400,000 ms) - 20770 + 1`, and
+- `seed` must be today's seed. Day 1 is 2026-11-13 UTC, `day = floor(block time / 86,400,000 ms) - 20770 + 1`, and
   `seed = ((day + 1000) x 0x9e3779b1 mod 2^32) mod 1,000,000,000`, or 1 if that is 0: the same number the browser
   computes (`dailyCrisis`). Yesterday's crisis cannot be submitted today.
 - `moves` has the form of a result link: 1 to 10 triples joined by dots, each an answer `0`-`2`, a lever letter
-  `n`, `r`, `t`, `m` or `g`, and a value of 1 to 9 digits (`1t350.0n0`).
-- `score` is 0..100 and `ending` is one of `survived`, `run`, `impeached`, `hyperinflation`.
-- One entry per account per day; a new claim replaces the old one only with a higher score. A day keeps at most 20
-  entries, sorted by score and then by who claimed first; on a full board a claim has to beat the lowest entry. The
-  latest 7 days that have entries are kept. A claim that does not make the board returns `false` and changes
-  nothing; a recorded one logs a `crisis_run` event (`account`, `day`, `seed`, `score`, `ending`, `moves`).
+  `n`, `r`, `t`, `m` or `g`, and a value of 1 to 9 digits (`1t350.0n0`). Moves that end before the crisis does are
+  refused; moves past its end are dropped (the board stores the ones the game used).
+- One entry per account per day; a new run replaces the old one only with a higher score. A day keeps at most 20
+  entries, sorted by score and then by who came first; on a full board a run has to beat the lowest entry. The
+  latest 7 days that have entries are kept. `submit_run` returns `{ recorded, score, ending }`; a recorded run logs a
+  `crisis_run` event (`account`, `day`, `seed`, `score`, `ending`, `moves`).
 
-What it does not check: that the moves produce that score and ending. The contract cannot replay the simulation (it
-is the TypeScript model in the browser), so `score` and `ending` are the caller's word, and anyone can submit a claim
-with a made-up score. This is why the board stores the moves: every browser replays each entry from `seed` + `moves`
-(`replayCrisis`) and marks a claim whose replay gives a different score or ending. The chain orders and keeps the
-claims; the replay decides which of them are true. Reason: a replay on chain would need the whole simulation in the
-contract, and a claim anyone can check in a second needs no trusted judge.
+Browsers still replay every entry (`replayCrisis`) to show it move by move; the replay and the contract always agree.
+Reason: a board anyone may write to is only worth reading if its scores cannot be invented, and a check every browser
+does is not a check the chain does.
 
 ## Agents (off chain; their deposits and withdrawals are ordinary contract calls)
 

@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 /**
- * The early-withdrawal fee, on chain: the shared public guest deposits LEMON, waits for the next bank day (the keeper
- * starts it on the hour), and takes it straight out. The contract must charge the day's interest back and burn it.
- * Uses only the public guest's published function-call key (apps/web/src/chain/publicGuest.json). Gas only.
+ * The early-withdrawal fee, on chain, with the move that tries to dodge it: the shared public guest deposits 4,990
+ * LEMON, waits for the next bank day (the keeper starts it), deposits 2 LEMON more, and takes 1,000 out. The 2 LEMON
+ * of today come out first and pay nothing; the other 998 went in yesterday and got a day's interest, so the contract
+ * charges that interest back on them and burns it (RULES.md, "The early-withdrawal fee"). A new deposit does not make
+ * the older money look new. Uses only the public guest's published function-call key
+ * (apps/web/src/chain/publicGuest.json). Gas only.
  *
- *   node scripts/testnet/early-fee.mjs [amount]      default 100 LEMON; waits up to 70 minutes for the bank day
+ *   node scripts/testnet/early-fee.mjs [deposit] [dust] [withdraw]      default 4990 2 1000; waits up to 70 minutes
+ *   RESUME=1 node scripts/testnet/early-fee.mjs 0 [dust] [withdraw]     the guest already deposited in the previous
+ *       bank day (a run stopped after its first step): skip the deposit and the wait, do the dust and the withdrawal now
  *
- * Writes data/testnet-runs/early-fee-<time>.json with both transactions and the fee the contract logged.
+ * Writes data/testnet-runs/early-fee-<time>.json with the three transactions and the fee the contract logged.
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -15,31 +20,38 @@ import { PROVIDER, ROOT, TGAS, eventsOf, failureText, sendTx, sleep, view } from
 
 const g = JSON.parse(readFileSync(path.join(ROOT, "apps/web/src/chain/publicGuest.json"), "utf8"));
 const guest = new Account(g.accountId, PROVIDER, KeyPairSigner.fromSecretKey(g.secretKey));
-const amount = String(Number(process.argv[2] ?? 100));
-const out = { started: new Date().toISOString(), account: g.accountId, amount };
+const [amount, dust, take] = [process.argv[2] ?? "4990", process.argv[3] ?? "2", process.argv[4] ?? "1000"].map((x) => String(Number(x)));
+const out = { started: new Date().toISOString(), contract: g.contract, account: g.accountId, amount, dust, take };
+const call = (method, args, label) => sendTx(guest, g.contract, [actions.functionCall(method, args, 100n * TGAS, 0n)], label);
 
 const s0 = await view(guest, g.contract, "get_state");
 const a0 = await view(guest, g.contract, "get_account", { account_id: g.accountId });
 console.log(`bank day ${s0.epoch_id}; guest wallet ${a0?.wallet}, deposit ${a0?.deposit_value}`);
-if (BigInt(a0?.wallet ?? 0) < BigInt(amount)) throw new Error(`the guest holds ${a0?.wallet ?? 0} LEMON, less than ${amount}`);
-const dep = await sendTx(guest, g.contract, [actions.functionCall("deposit", { amount }, 30n * TGAS, 0n)], "guest deposits");
-out.deposit = { tx: dep.hash, epoch_id: s0.epoch_id };
-console.log(`deposited ${amount} in bank day ${s0.epoch_id}: tx ${dep.hash}`);
-
-const until = Date.now() + 70 * 60_000;
+const resume = process.env.RESUME === "1";
+if (BigInt(a0?.wallet ?? 0) < (resume ? 0n : BigInt(amount)) + BigInt(dust)) throw new Error(`the guest holds ${a0?.wallet ?? 0} LEMON, less than ${amount} + ${dust}`);
 let s = s0;
-while (Number(s.epoch_id) === Number(s0.epoch_id) && Date.now() < until) { await sleep(60_000); s = await view(guest, g.contract, "get_state"); }
-if (Number(s.epoch_id) === Number(s0.epoch_id)) throw new Error("no new bank day within 70 minutes (is the keeper running?)");
+if (resume) {
+  if (BigInt(a0?.deposit_value ?? 0) < BigInt(take)) throw new Error(`RESUME=1 but the guest has only ${a0?.deposit_value ?? 0} LEMON deposited`);
+  out.deposit = { resumed: true, deposit_value: a0.deposit_value, epoch_id: s0.epoch_id };
+  console.log(`resuming: ${a0.deposit_value} LEMON already deposited before bank day ${s0.epoch_id}`);
+} else {
+  const dep = await call("deposit", { amount }, "guest deposits");
+  out.deposit = { tx: dep.hash, epoch_id: s0.epoch_id };
+  console.log(`deposited ${amount} in bank day ${s0.epoch_id}: tx ${dep.hash}`);
+  const until = Date.now() + 70 * 60_000;
+  while (Number(s.epoch_id) === Number(s0.epoch_id) && Date.now() < until) { await sleep(60_000); s = await view(guest, g.contract, "get_state"); }
+  if (Number(s.epoch_id) === Number(s0.epoch_id)) throw new Error("no new bank day within 70 minutes (is the keeper running?)");
+}
+const d2 = await call("deposit", { amount: dust }, "guest deposits dust");
 const a1 = await view(guest, g.contract, "get_account", { account_id: g.accountId });
-console.log(`bank day ${s.epoch_id} (rate added ${s.last_rate_bps} bps); early_fee_now ${a1.early_fee_now}; deposit ${a1.deposit_value}`);
+out.dust = { tx: d2.hash, epoch_id: s.epoch_id, fee_free_now: a1.fee_free_now, early_fee_on: a1.early_fee_on };
+console.log(`bank day ${s.epoch_id} (rate added ${s.last_rate_bps} bps): deposited ${dust} more (tx ${d2.hash}); free first ${a1.fee_free_now}, pays the fee ${a1.early_fee_on}`);
 try {
-  const w = await sendTx(guest, g.contract, [actions.functionCall("withdraw_all", {}, 100n * TGAS, 0n)], "guest withdraws");
+  const w = await call("withdraw", { amount: take }, "guest withdraws");
   const fee = eventsOf(w.res).find((e) => e.event === "early_withdrawal_fee")?.data?.[0] ?? null;
   const a2 = await view(guest, g.contract, "get_account", { account_id: g.accountId });
   out.withdraw = { tx: w.hash, epoch_id: s.epoch_id, rate_bps: s.last_rate_bps, fee, wallet_before: a1.wallet, wallet_after: a2.wallet };
-  const net = BigInt(a2.wallet) - BigInt(a1.wallet) - BigInt(amount);
-  console.log(`withdrew: fee ${fee ? `${fee.fee} LEMON of ${fee.withdrawn}` : "none"}; net gain of the round trip ${net} LEMON  tx ${w.hash}`);
-  out.netGain = String(net);
+  console.log(`withdrew ${take}: ${fee ? `fee ${fee.fee} LEMON on the ${fee.fresh} deposited yesterday` : "NO FEE"}  tx ${w.hash}`);
 } catch (e) { out.withdraw = { refused: failureText(e).slice(0, 200), tx: e?.hash ?? null }; console.log(`withdraw refused: ${failureText(e).slice(0, 200)}`); }
 mkdirSync(path.join(ROOT, "data/testnet-runs"), { recursive: true });
 const file = path.join(ROOT, "data/testnet-runs", `early-fee-${out.started.replace(/[:.]/g, "-")}.json`);

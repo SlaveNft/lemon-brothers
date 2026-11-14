@@ -6,7 +6,7 @@ import {
   airdrop, applyPlayer, createWorld, impeachmentVote, playRecordedDay, recordedWorld, stepEpoch, view,
   type Persona, type PlayerAction, type RecordedRun, type World, type WorldView,
 } from "@chair/sim";
-import savedRun from "../../../data/minds-runs/minds-2026-11-14T10-47-00-465Z.json";
+import savedRun from "../../../data/minds-runs/minds-2026-11-14T22-37-15-317Z.json";
 import { tr } from "./lang";
 
 /** A player action without the player (distributes over the union). */

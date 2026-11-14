@@ -24,7 +24,7 @@ if (!outDir) { console.error("usage: node scripts/dev/journey.mjs <outDir> [widt
 mkdirSync(outDir, { recursive: true });
 const BASE = process.env.BASE ?? "http://127.0.0.1:5190/", lang = process.env.LANG_UI ?? "en";
 const upTo = ["look", "get", "deposit", "day", "run"].indexOf(process.env.STEPS ?? "run");
-const CONTRACT = "lemonbank-587f5c93.testnet";
+const CONTRACT = "lemonbank-96b0974e.testnet";
 const RPCS = ["https://rpc.testnet.fastnear.com", "https://test.rpc.fastnear.com", "https://near-testnet.drpc.org", "https://rpc.testnet.near.org"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

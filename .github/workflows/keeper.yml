@@ -1,0 +1,41 @@
+# The bank's keeper, off anyone's laptop: every hour it moves the bank one bank day forward, the AI chair (NEAR AI
+# Cloud, TEE-signed) makes its statement, the town's agents act, and anyone owed by a collapse is paid.
+# Runs only when the repository variable KEEPER_ENABLED is "true" and these secrets exist:
+#   LEMON_TESTNET_KEYS  node scripts/testnet/ci-keys.mjs --export (test accounts and the chair's capped key only)
+#   NEAR_AI_API_KEY     the chair's model calls (one completion a bank day)
+name: keeper
+on:
+  schedule:
+    - cron: "2 * * * *"
+  workflow_dispatch:
+concurrency: keeper
+permissions:
+  contents: read
+jobs:
+  keeper:
+    if: ${{ vars.KEEPER_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      LEMON_DEPLOY: deploy-v2.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/testnet/ci-keys.mjs --import
+        env:
+          LEMON_TESTNET_KEYS: ${{ secrets.LEMON_TESTNET_KEYS }}
+      - run: npm run testnet:keeper
+        env:
+          EPOCHS: "1"
+          PERSONA: hawk
+          NEAR_AI_API_KEY: ${{ secrets.NEAR_AI_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: keeper-run-${{ github.run_id }}
+          path: data/testnet-runs/
+          retention-days: 30

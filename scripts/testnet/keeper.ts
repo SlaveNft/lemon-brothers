@@ -13,9 +13,12 @@
  *
  * Every epoch, after it elapses on chain:
  *   1. advance_epoch (anyone may call it; the crowd account does)
- *   2. the chair answers (NEAR AI Cloud, or the deterministic fallback without a key) and its keeper key calls
+ *   2. the chair's keeper key freezes the day's question (open_question with the town's mood); the contract writes
+ *      down its own numbers (the chair's credibility among them) and the speeches so far, and get_question returns
+ *      the observation, so the model reads exactly what the contract will check
+ *   3. the chair answers (NEAR AI Cloud, or the deterministic fallback without a key) and its keeper key calls
  *      set_policy_attested (when the DAO has pinned the model's TEE key) or set_policy; a rejected call is logged
- *   3. the agents read the epoch (statement, policy, outflows, write-offs, rumours) and act: real agent sub-accounts
+ *   4. the agents read the epoch (statement, policy, outflows, write-offs, rumours) and act: real agent sub-accounts
  *      sign their own withdraw_all / deposit; the simulated crowd moves money through its omnibus account in proportion
  */
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -28,15 +31,14 @@ import { actions } from "near-api-js";
 
 const st = readState();
 if (!st?.deployed) throw new Error("deploy first: npm run testnet:deploy");
-// default: the persona whose prompt the DAO pinned last (upgrade.mjs --pin or dao.mjs record it)
+// default: the persona whose prompt the DAO pinned last (pin.mjs or dao.mjs record it)
 const persona = (process.env.PERSONA ?? st.chairPersona ?? "dove") as Persona;
 const cfg = configFromEnv();
-const bank = account(st.contract), crowd = account(st.agents[st.agents.length - 1]), policyKey = account(st.chair, "policy");
+const bank = account(st.contract), crowd = account(st.agents[st.agents.length - 1]), policyKey = account(st.chair, st.policyLabel ?? "policy");
 const real: string[] = st.agents.slice(0, -1);
 const rng = new Rng(Number(process.env.SEED ?? 20261114));
 const town: Agent[] = createAgents(rng);
 const realOf = new Map(real.map((id, i) => [i, id]));
-let credibility = 1000, lastOutflowPermille = 0;
 /** Simulated crowd members (indexes into `town`) whose share of the omnibus deposit is still in the bank. A member
  *  that ran holds cash until it deposits again, so it cannot "run" every epoch. Set from chain state at start. */
 const crowdIn = new Set<number>();
@@ -60,7 +62,6 @@ let epochsRun = 0, lobbied = false;
 
 async function epoch() {
   const before: ChainState = await view(bank, st.contract, "get_state");
-  const outflowPermille = num(before.liabilities) + num(before.outflow) > 0 ? Math.round((num(before.outflow) * 1000) / (num(before.liabilities) + num(before.outflow))) : 0;
   const adv = await call(crowd, "advance_epoch", {});
   const evs = eventsOf(adv.res);
   const writedown = num(evs.find((e: any) => e.event === "writedown")?.data?.[0]?.permille);
@@ -79,8 +80,6 @@ async function epoch() {
   if (before.collapsed) {
     coolDown(town, AGENT.bailoutPanicKeepPermille);
     for (const a of town) a.ranAt = -1;
-    credibility = Math.max(AGENT.bailoutCredibility, Math.max(AGENT.credibilityFloor, credibility - AGENT.credibilityLiePenalty));
-    lastOutflowPermille = 0;
     crowdIn.clear(); // the collapse settled every deposit into cash
     console.log(`BAILOUT: round ${s.round} opens with ${s.reserve} LEMON of fresh reserve`);
     await reopen();
@@ -90,18 +89,20 @@ async function epoch() {
   console.log(`epoch ${s.epoch_id} (round ${s.round}.${s.epoch}) reserve ${s.reserve}/${s.liabilities}${writedown ? `  WRITE-OFF ${writedown / 10}%` : ""}${s.collapsed ? "  COLLAPSED" : ""}`);
   if (s.collapsed) return;
 
-  // the chair
-  const supply = num(s.supply);
-  const obs: Observation = {
-    round: s.round, epoch: s.epoch, epochsPerRound: 10, epochId: num(s.epoch_id),
-    reserve: num(s.reserve), loans: num(s.loans), liabilities: num(s.liabilities), supply, reservePermille: num(s.reserve_permille),
-    outflowPermille, moodPermille: Math.round((town.filter((a) => a.panic > a.threshold / 2).length * 1000) / town.length),
-    policy: { rate: num(s.policy.rate), target: num(s.policy.target), gate: num(s.policy.gate) },
-    // what the contract will accept: 5% an epoch, 15% a round, and never past the bank's ceiling (if it has one)
-    mintRoom: Math.max(0, Math.min(Math.floor(supply * 0.05), Math.floor(num(s.round_start_supply) * 0.15) - num(s.minted_this_round), s.max_supply ? num(s.max_supply) - supply : Infinity)),
-    speeches: s.speeches.map((x: any) => ({ who: x.who, text: x.text })), rumors: s.rumors.map((x: any) => x.kind),
-    credibility, writedownPermille: writedown,
-  };
+  // the chair: freeze the question on chain first (the bank's own numbers and the chair's credibility, the speeches so
+  // far, and the town's mood, the one figure only the keeper's simulated town knows), then ask the model exactly that
+  const mood = Math.round((town.filter((a) => a.panic > a.threshold / 2).length * 1000) / town.length);
+  let obs: Observation;
+  try {
+    const q = await call(policyKey, "open_question", { mood_permille: mood }, "open_question");
+    obs = (await view(bank, st.contract, "get_question")).observation as Observation;
+    record({ kind: "question", epoch_id: num(s.epoch_id), tx: q.hash, observation: obs });
+  } catch (e) {
+    const why = failureText(e).slice(0, 300);
+    console.log(`  question not frozen, the chair skips this day: ${why}`);
+    record({ kind: "question", epoch_id: num(s.epoch_id), rejected: why, tx: (e as { hash?: string }).hash ?? null });
+    return;
+  }
   const ans = await askChair(obs, persona, cfg);
   const d = ans.decision;
   let rejected: string | null = null, policyTx: string | null = null;
@@ -148,10 +149,11 @@ async function epoch() {
   for (const [i, id] of realOf) realAcc.set(i, await view(bank, st.contract, "get_account", { account_id: id }));
   const cashOnly = new Set<number>(town.flatMap((_, i) => ((realOf.has(i) ? num(realAcc.get(i)?.shares) > 0 : crowdIn.has(i)) ? [] : [i])));
   updatePanic(town, {
-    epochId: num(s.epoch_id), tone, credibility,
+    // the town hears the chair with the credibility the contract keeps, and reads the day's numbers the contract froze
+    epochId: num(s.epoch_id), tone, credibility: obs.credibility,
     rateChange: num(after.policy.rate) - num(s.policy.rate), gateOn: num(after.policy.gate) > 0, gateJustOn: num(after.policy.gate) > 0 && num(s.policy.gate) === 0,
     minted, targetRaised: num(after.policy.target) > num(s.policy.target),
-    outflowPermille, reservePermille: num(after.reserve_permille), rumors: obs.rumors.length, writedownPermille: writedown,
+    outflowPermille: obs.outflowPermille, reservePermille: num(after.reserve_permille), rumors: obs.rumors.length, writedownPermille: obs.writedownPermille,
     cashOnly, speeches: heard,
   }, rng);
   const crowdAcc0: ChainState | null = await view(bank, st.contract, "get_account", { account_id: crowd.accountId });
@@ -189,12 +191,7 @@ async function epoch() {
   console.log(`  crowd: ${crowdRun} of ${crowdInBefore} simulated depositors in the bank ran, ${crowdAdd} added money (${crowdIn.size} of ${crowdN} now in)`);
 
   const end: ChainState = await view(bank, st.contract, "get_state");
-  const out = num(end.liabilities) + num(end.outflow) > 0 ? Math.round((num(end.outflow) * 1000) / (num(end.liabilities) + num(end.outflow))) : 0;
   record({ kind: "epoch_end", epoch_id: num(end.epoch_id), reserve: num(end.reserve), loans: num(end.loans), liabilities: num(end.liabilities), supply: num(end.supply), collapsed: end.collapsed, crowd_ran: crowdRun, crowd_n: crowdN });
-  credibility = (tone === "calm" || tone === "confident") && out > lastOutflowPermille && out > AGENT.credibilityLieOutflowPermille
-    ? Math.max(AGENT.credibilityFloor, credibility - AGENT.credibilityLiePenalty)
-    : Math.min(AGENT.credibilityStart, credibility + AGENT.credibilityRecover);
-  lastOutflowPermille = out;
 }
 
 // EPOCHS=n stops after n epoch attempts (default 3: with a NEAR AI key every epoch is a paid call)
@@ -218,8 +215,26 @@ async function openBank() {
   console.log(`  bank open: reserve ${after.reserve}, loans ${after.loans}, owed ${after.liabilities}`);
 }
 
+/** After a collapse each account collects its share on its next call; the keeper settles everyone at once (anyone
+ *  may call `settle`), so wallets and the page show the money where it is. */
+async function settleAll() {
+  const s: ChainState = await view(bank, st.contract, "get_state");
+  if (num(s.collapses) === 0) return;
+  let paid = 0;
+  for (let from = 0; from < num(s.accounts); from += 200) {
+    const ids: string[] = await view(bank, st.contract, "get_unsettled", { from_index: from, limit: 200 });
+    for (let i = 0; i < ids.length; i += 20) {
+      const r = await call(crowd, "settle", { account_ids: ids.slice(i, i + 20) }, "settle", 150n);
+      paid += ids.slice(i, i + 20).length;
+      record({ kind: "settle", accounts: ids.slice(i, i + 20).length, tx: r.hash });
+    }
+  }
+  if (paid) console.log(`  settled ${paid} accounts after the collapse`);
+}
+
 /** A new round opens: real agents calmer than their threshold deposit 80% of their wallet; the crowd in proportion. */
 async function reopen() {
+  if (num((await view(bank, st.contract, "get_state")).collapses) > 0) await settleAll();
   let calm = 0, crowdN = 0;
   for (let i = 0; i < town.length; i++) {
     const a = town[i], id = realOf.get(i);
@@ -241,7 +256,7 @@ async function main() {
   if (s0.chair_signer) {
     // a paid answer to a prompt the contract will refuse is money thrown away: stop before asking
     const mine = sha256hex(chairSystemPrompt(persona));
-    if (s0.chair_prompt_sha256 !== mine) throw new Error(`the DAO pinned prompt ${s0.chair_prompt_sha256 ?? "none"}, PERSONA=${persona} sends ${mine}: run scripts/testnet/upgrade.mjs --pin with this persona first`);
+    if (s0.chair_prompt_sha256 !== mine) throw new Error(`the DAO pinned prompt ${s0.chair_prompt_sha256 ?? "none"}, PERSONA=${persona} sends ${mine}: run scripts/testnet/pin.mjs with this persona first`);
     if (s0.chair_model !== cfg.model) throw new Error(`the DAO pinned model ${s0.chair_model}, NEAR_AI_MODEL is ${cfg.model}`);
   }
   console.log(`evidence: ${path.relative(ROOT, runFile)}`);

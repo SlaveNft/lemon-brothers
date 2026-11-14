@@ -21,7 +21,7 @@ function snap(b: Bank) {
     supply: b.supply.toString(), max_supply: b.maxSupply.toString(), reserve: b.reserve.toString(), loans: b.loans.toString(), total_shares: b.totalShares.toString(),
     index: b.index.toString(), collapsed: b.collapsed, epoch: b.epoch, round: b.round, epoch_id: b.epochId,
     minted_this_round: b.mintedThisRound.toString(), rate: b.policy.rate.toString(), target: b.policy.target.toString(),
-    gate: b.policy.gate.toString(), chair: b.chair, order: [...b.accounts.keys()], accounts,
+    gate: b.policy.gate.toString(), chair: b.chair, unsettled: b.unsettled.toString(), era: b.era, accounts,
   };
 }
 

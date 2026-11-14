@@ -71,7 +71,7 @@ describe("you are the chair", () => {
       const c = createCrisis(seed);
       while (!c.ending) {
         playEpoch(c, { a: (seed % 3) as 0 | 1 | 2, lever: seed % 2 ? "target" : "none", v: 350 });
-        expect(c.w.bank.supply).toBe(sumWallets(c.w.bank) + c.w.bank.reserve + c.w.bank.loans);
+        expect(c.w.bank.supply).toBe(sumWallets(c.w.bank) + c.w.bank.reserve + c.w.bank.loans + c.w.bank.unsettled);
       }
       const r = crisisResult(c);
       expect(r.epochs).toBeLessThanOrEqual(10);

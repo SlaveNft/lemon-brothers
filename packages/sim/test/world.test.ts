@@ -15,7 +15,7 @@ describe("world", () => {
       const w = createWorld(seed, "dove", ["player"]);
       for (let i = 0; i < 40; i++) {
         stepEpoch(w, i === 2 ? [{ t: "rumor", who: "player", kind: "vault_empty" }] : []);
-        expect(w.bank.supply).toBe(sumWallets(w.bank) + w.bank.reserve + w.bank.loans);
+        expect(w.bank.supply).toBe(sumWallets(w.bank) + w.bank.reserve + w.bank.loans + w.bank.unsettled);
       }
     }
   });

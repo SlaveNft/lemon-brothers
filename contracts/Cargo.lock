@@ -331,6 +331,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "crisis-core"
+version = "0.1.0"
+dependencies = [
+ "bank-core",
+ "serde_json",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1121,9 +1129,10 @@ dependencies = [
 
 [[package]]
 name = "lemon-bank"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "bank-core",
+ "crisis-core",
  "near-sdk",
 ]
 

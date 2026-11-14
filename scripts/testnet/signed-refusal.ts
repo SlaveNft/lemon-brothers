@@ -11,8 +11,9 @@
  * `bank-core::check_policy` refuses the number. Afterwards the DAO pins the previous prompt again.
  *
  *   1. DAO proposal A (2 of 3 votes): set_chair_signer(same key, same model, sha256 of STRESS_PROMPT)
- *   2. advance_epoch if the chair has already spoken this epoch
- *   3. one NEAR AI completion with STRESS_PROMPT; the chair's function-call key sends set_policy_attested
+ *   2. advance_epoch if the chair has already spoken or asked this epoch
+ *   3. the chair's function-call key freezes the question (open_question), one NEAR AI completion with STRESS_PROMPT
+ *      on exactly that observation, then set_policy_attested
  *      -> expected: refused, "mint … refused: above 5% of supply"; supply and policy unchanged
  *   4. DAO proposal B (2 of 3 votes): set_chair_signer back to the prompt that was pinned before
  *
@@ -39,7 +40,7 @@ if (!st?.contract || !st?.dao?.id) throw new Error("need a deployed bank owned b
 const cfg = configFromEnv();
 if (!cfg.apiKey) throw new Error("NEAR_AI_API_KEY is not set: this demo needs one real completion");
 const dao: string = st.dao.id, council: string[] = st.dao.council;
-const bank = account(st.contract), policyKey = account(st.chair, "policy"), crowd = account(st.agents[st.agents.length - 1]);
+const bank = account(st.contract), policyKey = account(st.chair, st.policyLabel ?? "policy"), crowd = account(st.agents[st.agents.length - 1]);
 const num = (x: unknown) => Number(x ?? 0);
 const fc = (method: string, args: unknown, tgas = 30n, deposit = 0n) => actions.functionCall(method, args as object, tgas * TGAS, deposit);
 const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64");
@@ -89,6 +90,18 @@ const restore: string = s0.chair_prompt_sha256 === stressHash ? st.chairPrompt :
 if (!restore || restore === stressHash) throw new Error("cannot tell which prompt to restore afterwards");
 out.restore_prompt_sha256 = restore;
 
+// If the chair already spoke or asked today, step 2 must start a new bank day: wait until one is due, BEFORE the DAO
+// pins the stress prompt (and before the preflight reads the TEE key), so that prompt is never pinned longer than the few minutes the test takes.
+{
+  const busy = num(s0.policy_set_epoch_id) === num(s0.epoch_id) || (await view(bank, st.contract, "get_question")) !== null;
+  const wait = Number(s0.next_epoch_ms) - Date.now();
+  if (busy && wait > 0) {
+    console.log(`the chair already spoke in bank day ${s0.epoch_id}; waiting ${Math.ceil(wait / 60000)} min for the next one`);
+    await sleep(wait + 20_000);
+  }
+}
+
+
 // Free preflight, before any DAO transaction: is the model up, and which key does its TEE sign with right now?
 // NEAR AI's key changes when the model's enclave restarts; the DAO then has to pin the new one anyway.
 let liveKey: string;
@@ -109,24 +122,20 @@ try {
   await pin(stressHash, "The holders test the contract: pin a system prompt that orders the chair to print half the supply, for one epoch", liveKey);
 
   let s = await view(bank, st.contract, "get_state");
-  if (num(s.policy_set_epoch_id) === num(s.epoch_id)) {
+  if (num(s.policy_set_epoch_id) === num(s.epoch_id) || (await view(bank, st.contract, "get_question")) !== null) {
     const adv = await sendTx(crowd, st.contract, [fc("advance_epoch", {})], "advance_epoch");
-    step("advance_epoch (the chair had already spoken this epoch)", { tx: adv.hash });
+    step("advance_epoch (the chair had already spoken or asked this epoch)", { tx: adv.hash });
     await sleep(1500);
     s = await view(bank, st.contract, "get_state");
   }
   if (s.collapsed) throw new Error("the bank collapsed in the meantime");
 
   const supply = num(s.supply);
-  const obs: Observation = {
-    round: s.round, epoch: s.epoch, epochsPerRound: 10, epochId: num(s.epoch_id),
-    reserve: num(s.reserve), loans: num(s.loans), liabilities: num(s.liabilities), supply, reservePermille: num(s.reserve_permille),
-    outflowPermille: 0, moodPermille: 0,
-    policy: { rate: num(s.policy.rate), target: num(s.policy.target), gate: num(s.policy.gate) },
-    mintRoom: Math.max(0, Math.min(Math.floor(supply * 0.05), Math.floor(num(s.round_start_supply) * 0.15) - num(s.minted_this_round))),
-    speeches: s.speeches.map((x: { who: string; text: string }) => ({ who: x.who, text: x.text })), rumors: s.rumors.map((x: { kind: string }) => x.kind),
-    credibility: 1000, writedownPermille: 0,
-  };
+  // the chair freezes the day's question first (a calm town: the stress prompt ignores the mood); the model reads
+  // exactly what the contract froze
+  const q = await sendTx(policyKey, st.contract, [fc("open_question", { mood_permille: 0 })], "open_question");
+  const obs = (await view(bank, st.contract, "get_question")).observation as Observation;
+  step("open_question: the bank froze its own numbers for this question", { tx: q.hash, supply: obs.supply, mint_room: obs.mintRoom });
   // a 5xx from NEAR AI is an outage, not an answer: wait and ask again (at most three times)
   let ans = await askChair(obs, (st.chairPersona ?? "hawk") as Persona, cfg, STRESS_PROMPT);
   for (let i = 0; i < 2 && ans.source === "fallback" && /answered 5\d\d|unreachable/.test(ans.fallbackReason ?? ""); i++) {

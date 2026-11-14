@@ -67,14 +67,22 @@ fn simulation_and_contract_agree() {
             assert_eq!(b.policy.target, n(&st["target"]), "{ctx}: target");
             assert_eq!(b.policy.gate, n(&st["gate"]), "{ctx}: gate");
             assert_eq!(b.chair, s(&st["chair"]), "{ctx}: chair");
-            let order: Vec<String> = st["order"].as_array().unwrap().iter().map(s).collect();
-            assert_eq!(b.order, order, "{ctx}: account order");
+            // the contract settles each account on its next touch; the simulation settles everyone at the collapse.
+            // Settling everyone here first must give the simulation's state exactly.
+            let mut settled = b.clone();
+            settled.settle_all();
+            assert_eq!(settled.unsettled, n(&st["unsettled"]), "{ctx}: unsettled (rounding dust of the splits)");
+            assert_eq!(b.era as u128, n(&st["era"]), "{ctx}: era");
+            let ids: Vec<&String> = st["accounts"].as_object().unwrap().keys().collect();
+            assert_eq!(settled.accounts.len(), ids.len(), "{ctx}: number of accounts");
             for (id, wv) in st["accounts"].as_object().unwrap() {
-                let a = &b.accounts[id];
+                let a = &settled.accounts[id];
                 assert_eq!(a.wallet, n(&wv[0]), "{ctx}: wallet of {id}");
                 assert_eq!(a.shares, n(&wv[1]), "{ctx}: shares of {id}");
             }
-            assert_eq!(b.supply, b.sum_wallets() + b.reserve + b.loans, "{ctx}: conservation");
+            assert_eq!(b.supply, b.sum_wallets() + b.reserve + b.loans + b.unsettled, "{ctx}: conservation");
+            // half the time, carry on from the settled state: touching accounts early or late changes nothing
+            if i % 2 == 0 { b = settled; }
             steps += 1;
         }
     }

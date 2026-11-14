@@ -5,10 +5,12 @@
  * Each step is skipped when chain state shows it is done, so the script can be re-run after a failure.
  *
  *   PERSONA=hawk npx tsx scripts/testnet/dao.mjs
+ *   LEMON_DEPLOY=deploy-v2.json DAO=lemon-brothers-587f5c93.sputnik-v2.testnet NEW_CHAIR=lemonhawk-24e23cdf.testnet \
+ *     PERSONA=hawk npx tsx scripts/testnet/dao.mjs        an existing DAO takes a second bank; an existing chair is appointed
  *
  *   1. create a Sputnik DAO on sputnik-v2.testnet (5 NEAR for its storage), council = funders[0..2], 2 of 3 to pass
  *   2. the bank's owner (the contract account) calls set_owner(dao): from now on only proposals can impeach or pin
- *   3. a new chair account (helper-funded) with a keeper key limited to set_policy / set_policy_attested on the bank
+ *   3. a new chair account (helper-funded) with a keeper key limited to the chair's methods (open_question, set_policy, set_policy_attested) on the bank
  *   4. impeachment proposal: one FunctionCall proposal on the bank with set_chair(new chair) and
  *      set_chair_signer(NEAR AI key, model, sha256 of the PERSONA's system prompt)
  *   5. two council votes; the second one executes the proposal
@@ -16,7 +18,7 @@
 import { createHash } from "node:crypto";
 import { KeyPair, actions } from "near-api-js";
 import { chairSystemPrompt } from "@chair/sim";
-import { NEAR, TGAS, account, failureText, helperAccount, readState, saveKey, sendTx, sleep, view, writeState } from "./common.mjs";
+import { CHAIR_METHODS, NEAR, TGAS, account, failureText, helperAccount, readState, saveKey, sendTx, sleep, view, writeState } from "./common.mjs";
 
 const st = readState();
 if (!st?.contract || (st.funders ?? []).length < 3) throw new Error("need a deployed bank and 3 funders (node scripts/testnet/fund.mjs 3)");
@@ -36,14 +38,18 @@ async function exists(id) {
 
 // 1. the DAO
 const daoName = `lemon-brothers-${st.contract.split("-").pop().split(".")[0]}`;
-const dao = `${daoName}.${FACTORY}`;
+const dao = st.dao.id ?? process.env.DAO ?? `${daoName}.${FACTORY}`;
 if (!(await exists(dao))) {
+  if (process.env.DAO) throw new Error(`DAO ${dao} does not exist`);
   const args = { config: { name: daoName, purpose: "Holders of Lemon Brothers ($LEMON): impeach the AI chair and pin what its signed answers must match (testnet demo)", metadata: "" }, policy: council };
   const r = await sendTx(account(council[0]), FACTORY, [fc("create", { name: daoName, args: b64(args) }, 150n, 5n * NEAR)], "create DAO");
   st.dao = { ...st.dao, id: dao, council, createTx: r.hash };
   writeState(st);
   await sleep(2000);
 }
+st.dao.id ??= dao;
+st.dao.council ??= council;
+writeState(st);
 log("dao", dao);
 const policy = await view(bank, dao, "get_policy");
 const bond = BigInt(policy.proposal_bond ?? "0");
@@ -60,14 +66,14 @@ log("owner", dao);
 
 // 3. the new chair: its own account and a keeper key that can only set policy on the bank
 if (!st.dao.newChair) {
-  const { accountId } = await helperAccount("lemonhawk");
-  st.dao.newChair = accountId; writeState(st);
+  st.dao.newChair = process.env.NEW_CHAIR ?? (await helperAccount("lemonhawk")).accountId;
+  writeState(st);
 }
 const newChair = st.dao.newChair;
 if (!st.dao.newChairKeyTx) {
   const kp = KeyPair.fromRandom("ed25519");
-  saveKey(newChair, kp.toString(), kp.getPublicKey().toString(), "policy");
-  const r = await sendTx(account(newChair), newChair, [actions.addFunctionCallAccessKey(kp.getPublicKey(), st.contract, ["set_policy", "set_policy_attested"], NEAR / 4n)], "new chair key");
+  saveKey(newChair, kp.toString(), kp.getPublicKey().toString(), st.policyLabel ?? "policy");
+  const r = await sendTx(account(newChair), newChair, [actions.addFunctionCallAccessKey(kp.getPublicKey(), st.contract, CHAIR_METHODS, NEAR / 4n)], "new chair key");
   st.dao.newChairKeyTx = r.hash; writeState(st);
 }
 log("new chair", newChair);

@@ -128,7 +128,7 @@ describe("guest account: the helper", () => {
 });
 
 describe("guest account: submit_run", () => {
-  it("sends submit_run with { seed, moves, score, ending } from the guest account", async () => {
+  it("sends submit_run with { seed, moves } from the guest account: the contract scores the run itself", async () => {
     const { env, calls } = fake();
     const stages: string[] = [];
     const out = await submitRun(RUN, { env, onStage: (s) => stages.push(s) });
@@ -136,8 +136,7 @@ describe("guest account: submit_run", () => {
     expect(stages).toEqual(["guest", "sending"]);
     expect(calls.sent).toHaveLength(1);
     expect(calls.sent[0].method).toBe("submit_run");
-    expect(calls.sent[0].args).toEqual({ seed: 123456, moves: "0n0.1r90.2m4000", score: 71, ending: "survived" });
-    expect(Object.keys(calls.sent[0].args).sort()).toEqual(["ending", "moves", "score", "seed"]);
+    expect(calls.sent[0].args).toEqual({ seed: 123456, moves: "0n0.1r90.2m4000" });
     expect(calls.sent[0].guest.accountId).toBe(calls.created[0].accountId);
   });
 
